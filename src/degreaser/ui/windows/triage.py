@@ -765,8 +765,7 @@ class TriageWindow(QMainWindow):
             self.project.name,
             self.project.source_config,
             self.project.settings,
-            always_delete,
-            always_keep,
+            self.project.rule_config(),
         )
         dialog = ProjectEditDialog(self, existing=form)
         if dialog.exec() != ProjectEditDialog.DialogCode.Accepted:
@@ -775,8 +774,8 @@ class TriageWindow(QMainWindow):
         self.project.set_meta("name", result.name)
         self.project.save_settings(result.settings)
         self.session.settings = result.settings
+        self.project.save_rule_config(result.rules)
         if (result.always_delete, result.always_keep) != (always_delete, always_keep):
-            self.project.replace_rules(result.always_delete, result.always_keep)
             self.session.reload_rules()
             self._request_walk()
             # The current file may now be decided by a rule.

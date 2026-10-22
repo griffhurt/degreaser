@@ -13,23 +13,13 @@ from typing import IO, Any, Self
 
 from degreaser.core import paths
 from degreaser.core.db.connection import connect, tx
+from degreaser.core.rules.presets import RuleConfig
 from degreaser.core.sources.base import FileSource
 from degreaser.core.sources.errors import Unsupported
 from degreaser.core.sources.local import LocalSource
 
-# Seeded always-delete rules (docs/triage-engine.md §4.2).
-DEFAULT_DELETE_RULES = [
-    ".DS_Store",
-    "Thumbs.db",
-    "ehthumbs.db",
-    "desktop.ini",
-    "Icon\r",
-    ".Spotlight-V100/",
-    ".Trashes/",
-    ".fseventsd/",
-    ".TemporaryItems/",
-    "$RECYCLE.BIN/",
-]
+# Seeded always-delete rules: the default presets (core/rules/presets.py).
+DEFAULT_DELETE_RULES = RuleConfig().patterns("always_delete")
 
 # Degreaser's own folder at the project root; never scanned (D8).
 DEGREASER_DIR = ".degreaser"
@@ -169,6 +159,7 @@ class Project:
                 "created_at": time.time(),
                 "last_opened": None,
                 "state_revision": 0,
+                "rule_config": RuleConfig().to_dict(),
             }.items():
                 conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)", (key, json.dumps(value)))
             conn.executemany(
@@ -239,7 +230,27 @@ class Project:
             [r["pattern"] for r in rows if r["kind"] == "always_keep"],
         )
 
-    def replace_rules(self, always_delete: list[str], always_keep: list[str]) -> None:
+    def rule_config(self) -> RuleConfig:
+        """Presets + custom patterns. Older projects have none stored: infer from the rules."""
+        stored = self.meta("rule_config")
+        if stored is not None:
+            return RuleConfig.from_dict(stored)
+        return RuleConfig.infer(*self.rules())
+
+    def save_rule_config(self, config: RuleConfig) -> None:
+        self.replace_rules(
+            config.patterns("always_delete"), config.patterns("always_keep"), config=config
+        )
+
+    def replace_rules(
+        self,
+        always_delete: list[str],
+        always_keep: list[str],
+        config: RuleConfig | None = None,
+    ) -> None:
+        """Write the flattened rules (and the preset view of them, inferred if not given)."""
+        config = config or RuleConfig.infer(always_delete, always_keep)
+        self.set_meta("rule_config", config.to_dict())
         with tx(self.conn):
             self.conn.execute("DELETE FROM rules")
             self.conn.executemany(

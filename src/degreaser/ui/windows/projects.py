@@ -237,7 +237,7 @@ class ProjectsWindow(QMainWindow):
             return
         form = dialog.result_form()
         project = Project.create(form.name, form.source, form.settings)
-        project.replace_rules(form.always_delete, form.always_keep)
+        project.save_rule_config(form.rules)
         project.close()
         self.refresh()
         self.open_requested.emit(project.uuid)
@@ -256,16 +256,15 @@ class ProjectsWindow(QMainWindow):
             QMessageBox.information(self, "Project is open", str(exc))
             return
         try:
-            always_delete, always_keep = project.rules()
             form = ProjectForm(
-                project.name, project.source_config, project.settings, always_delete, always_keep
+                project.name, project.source_config, project.settings, project.rule_config()
             )
             dialog = ProjectEditDialog(self, existing=form)
             if dialog.exec() == ProjectEditDialog.DialogCode.Accepted:
                 result = dialog.result_form()
                 project.set_meta("name", result.name)
                 project.save_settings(result.settings)
-                project.replace_rules(result.always_delete, result.always_keep)
+                project.save_rule_config(result.rules)
         finally:
             project.close()
         self.refresh()
