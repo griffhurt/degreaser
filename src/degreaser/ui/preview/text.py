@@ -24,6 +24,8 @@ class TextView(QWidget):
         )
         if monospace:
             self.edit.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+            # The app stylesheet sets Inter on everything; this property opts back into mono.
+            self.edit.setProperty("mono", True)
         layout.addWidget(self.edit, 1)
 
         footer = QHBoxLayout()

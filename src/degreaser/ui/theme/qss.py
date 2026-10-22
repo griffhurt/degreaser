@@ -7,8 +7,11 @@ or label.setProperty("role", "muted"); see the selectors below.
 from degreaser.ui.theme.tokens import Tokens
 
 
-def stylesheet(t: Tokens, arrow_path: str = "") -> str:
-    """arrow_path: a themed chevron image; QSS can only draw combo-box arrows from files."""
+def stylesheet(
+    t: Tokens, arrow_path: str = "", check_path: str = "", mono_family: str = "monospace"
+) -> str:
+    """arrow_path/check_path: themed images (QSS can only draw these from files).
+    mono_family: the platform's fixed-width font, for text previews."""
     r, rl = t.radius, t.radius_lg
     return f"""
 * {{
@@ -115,7 +118,36 @@ QComboBox QAbstractItemView {{
     selection-color: {t.text};
     padding: 4px;
 }}
+QPlainTextEdit[mono="true"], QTextEdit[mono="true"] {{ font-family: "{mono_family}"; font-size: 12px; }}
+
 QCheckBox, QRadioButton {{ spacing: 8px; }}
+QCheckBox::indicator, QRadioButton::indicator {{
+    width: 14px;
+    height: 14px;
+    border: 2px solid {t.control_border};
+    background: {t.surface};
+}}
+QCheckBox::indicator {{ border-radius: 4px; }}
+QRadioButton::indicator {{ border-radius: 9px; }}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {{ border-color: {t.accent}; }}
+QCheckBox::indicator:checked {{
+    background: {t.accent};
+    border-color: {t.accent};
+    image: url("{check_path}");
+}}
+QRadioButton::indicator:checked {{
+    width: 8px;
+    height: 8px;
+    border: 5px solid {t.accent};
+    background: {t.accent_text};
+}}
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {{
+    border-color: {t.border_strong};
+    background: {t.surface_alt};
+}}
+QCheckBox::indicator:checked:disabled {{ background: {t.border_strong}; border-color: {t.border_strong}; }}
+QRadioButton::indicator:checked:disabled {{ border-color: {t.border_strong}; }}
+QCheckBox:disabled, QRadioButton:disabled {{ color: {t.text_faint}; }}
 
 /* Group boxes -------------------------------------------------------------------------- */
 QGroupBox {{

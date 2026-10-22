@@ -22,6 +22,31 @@ def load_fonts() -> bool:
     return ok
 
 
+# Preferred fixed-width fonts per platform, best first. Qt's FixedFont can come back as the
+# generic name "monospace", which doesn't resolve everywhere (it fell back to a
+# proportional font on macOS), so pick a concrete installed family.
+MONO_CANDIDATES = [
+    "SF Mono",
+    "Menlo",
+    "Cascadia Mono",
+    "Consolas",
+    "JetBrains Mono",
+    "DejaVu Sans Mono",
+    "Ubuntu Mono",
+    "Liberation Mono",
+    "Noto Sans Mono",
+    "Courier New",
+]
+
+
+def mono_family() -> str:
+    installed = set(QFontDatabase.families())
+    for family in MONO_CANDIDATES:
+        if family in installed:
+            return family
+    return QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
+
+
 def palette(t: Tokens) -> QPalette:
     """Palette for the parts Fusion draws itself (checkboxes, radio buttons, focus, links)."""
     p = QPalette()
@@ -77,15 +102,16 @@ class ThemeManager(QObject):
         self.apply(app)
 
     @staticmethod
-    def _arrow_file(t: Tokens) -> str:
-        """Write the themed combo-box chevron to app data; returns a QSS-friendly path."""
+    def _themed_asset(name: str, color: str, t: Tokens, stroke: int = 2) -> str:
+        """Write a recoloured icon to app data for QSS `image: url(...)`; returns its path."""
         directory = paths.app_data_dir() / "theme"
         directory.mkdir(parents=True, exist_ok=True)
-        target = directory / f"chevron-down-{'dark' if t.dark else 'light'}.svg"
-        svg = (resources.files("degreaser.ui.assets") / "icons" / "chevron-down.svg").read_text(
-            "utf-8"
+        target = directory / f"{name}-{'dark' if t.dark else 'light'}.svg"
+        svg = (resources.files("degreaser.ui.assets") / "icons" / f"{name}.svg").read_text("utf-8")
+        svg = svg.replace("currentColor", color).replace(
+            'stroke-width="2"', f'stroke-width="{stroke}"'
         )
-        target.write_text(svg.replace("currentColor", t.text_muted), encoding="utf-8")
+        target.write_text(svg, encoding="utf-8")
         return target.as_posix()
 
     def system_is_dark(self) -> bool:
@@ -95,7 +121,15 @@ class ThemeManager(QObject):
         dark = self.system_is_dark() if self._override is None else self._override
         self.tokens = DARK if dark else LIGHT
         app.setPalette(palette(self.tokens))
-        app.setStyleSheet(stylesheet(self.tokens, self._arrow_file(self.tokens)))
+        t = self.tokens
+        app.setStyleSheet(
+            stylesheet(
+                t,
+                arrow_path=self._themed_asset("chevron-down", t.text_muted, t),
+                check_path=self._themed_asset("check", t.accent_text, t, stroke=3),
+                mono_family=mono_family(),
+            )
+        )
         self.changed.emit(self.tokens)
 
 

@@ -13,6 +13,7 @@ class Tokens:
     surface_sunken: str  # preview canvas
     border: str
     border_strong: str
+    control_border: str  # checkbox/radio outlines: must read clearly on bg and surface
     # Text
     text: str
     text_muted: str
@@ -49,6 +50,7 @@ LIGHT = Tokens(
     surface_sunken="#ececee",
     border="#e3e3e6",
     border_strong="#cfcfd4",
+    control_border="#8b8b96",
     text="#18181b",
     text_muted="#6b6b75",
     text_faint="#a1a1aa",
@@ -77,6 +79,7 @@ DARK = Tokens(
     surface_sunken="#0b0b0d",
     border="#2a2a30",
     border_strong="#3b3b42",
+    control_border="#76767f",
     text="#ececef",
     text_muted="#a0a0aa",
     text_faint="#6b6b75",

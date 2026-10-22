@@ -8,10 +8,13 @@ from degreaser.ui.theme.qss import stylesheet
 
 
 def test_stylesheet_uses_tokens_for_both_themes() -> None:
-    light, dark = stylesheet(LIGHT, "/x/arrow.svg"), stylesheet(DARK, "/x/arrow.svg")
+    light = stylesheet(LIGHT, "/x/arrow.svg", "/x/check.svg", "Menlo")
+    dark = stylesheet(DARK, "/x/arrow.svg", "/x/check.svg", "Menlo")
     assert LIGHT.accent in light and DARK.accent in dark
     assert LIGHT.bg not in dark
-    assert 'url("/x/arrow.svg")' in light
+    assert 'url("/x/arrow.svg")' in light and 'url("/x/check.svg")' in light
+    assert 'font-family: "Menlo"' in light
+    assert LIGHT.control_border in light  # checkbox/radio outlines
     assert "{" in light and "{{" not in light  # f-string braces fully rendered
 
 
@@ -35,3 +38,13 @@ def test_manager_applies_and_switches(qtbot: QtBot) -> None:
     manager.apply(app)
     assert manager.tokens is LIGHT and seen[-1] is LIGHT
     app.setStyleSheet("")  # don't leak the theme into other tests
+
+
+def test_mono_family_is_really_fixed_pitch(qtbot: QtBot) -> None:
+    from PySide6.QtGui import QFont, QFontInfo
+
+    from degreaser.ui.theme.manager import mono_family
+
+    family = mono_family()
+    assert family != "monospace"
+    assert QFontInfo(QFont(family)).fixedPitch()

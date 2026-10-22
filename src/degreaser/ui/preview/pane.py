@@ -284,7 +284,8 @@ class PreviewPane(QWidget):
         source, rel, entry, det = self._source, self.rel, self._entry, prepared.detection
         assert source and rel is not None and entry
         size = entry.size or 0
-        view = TextView(monospace=det.kind == Kind.CODE, wrap=det.kind != Kind.CODE)
+        # All text is monospace; only code stays unwrapped.
+        view = TextView(monospace=True, wrap=det.kind != Kind.CODE)
         reader = TextReader(source, rel, size, det.encoding or "utf-8", det.bom)
         self._text_reader = reader
         view.append(reader.consume(prepared.head[: prepared.plan.initial_bytes]))
