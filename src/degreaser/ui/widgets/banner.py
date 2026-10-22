@@ -1,16 +1,8 @@
 """The large state banner above the preview (docs/product-spec.md §4.2)."""
 
-from enum import StrEnum
-
 from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
-
-class BannerKind(StrEnum):
-    NEW = "new"
-    CHANGED = "changed"
-    LOADED_SKIP = "loaded_skip"
-    PREVIOUSLY_SKIPPED = "previously_skipped"
-
+from degreaser.core.triage.session import Banner as BannerKind
 
 _STYLES: dict[BannerKind, tuple[str, str, str]] = {
     # kind: (text, background, foreground)
@@ -30,9 +22,9 @@ class Banner(QLabel):
         self.hide()
 
     def show_kind(self, kind: BannerKind | None, detail: str = "") -> None:
-        """Show a banner (detail is appended, e.g. the previous decision), or hide for None."""
+        """Show a banner (detail is appended, e.g. the previous decision); None/NONE hides it."""
         self.kind = kind
-        if kind is None:
+        if kind is None or kind is BannerKind.NONE:
             self.hide()
             return
         text, bg, fg = _STYLES[kind]

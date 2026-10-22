@@ -128,8 +128,3 @@ def deleted_folder_marks(conn: sqlite3.Connection, paths: list[str]) -> bool:
         paths,
     ).fetchone()
     return row is not None
-
-
-def subtree_range(path: str) -> tuple[str, str]:
-    """Bounds for `path >= lo AND path < hi` covering everything strictly beneath path."""
-    return (path + "/", path + "0") if path else ("\x01", "\U0010ffff")

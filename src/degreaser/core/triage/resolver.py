@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from degreaser.core.categories.store import CategoryStore
 from degreaser.core.model import Category, Effective, EffectiveState, Origin
 from degreaser.core.rules.ruleset import ORPHAN_APPLEDOUBLE, RuleMatch, RuleSet
-from degreaser.core.sources.base import basename, parent
+from degreaser.core.sources.base import basename, parent, subtree_range
 from degreaser.core.triage.order import companion_of, is_appledouble, is_excluded
 
 EXCLUDED_STATE = EffectiveState(Effective.KEEP, Origin.EXCLUDED)
@@ -80,7 +80,7 @@ ROOT_CTX = DirCtx(path="")
 
 def has_protected_files(conn: sqlite3.Connection, folder: str) -> bool:
     """Any file beneath `folder` with a keep/skip/deferred decision (blocks whole-folder delete)."""
-    lo, hi = folder + "/", folder + "0"
+    lo, hi = subtree_range(folder)
     return (
         conn.execute(
             "SELECT 1 FROM decisions WHERE path >= ? AND path < ? AND is_dir = 0"

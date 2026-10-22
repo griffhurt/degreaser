@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 
 from degreaser.core.commit.journal import DELETE_OPS, get_commit, ops, set_status
 from degreaser.core.db.connection import tx
-from degreaser.core.scan.common import subtree_range
+from degreaser.core.sources.base import subtree_range
 
 
 @dataclass(slots=True)

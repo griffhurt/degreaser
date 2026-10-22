@@ -79,6 +79,9 @@ class PathBar(QWidget):
         while self._layout.count():
             item = self._layout.takeAt(0)
             if item is not None and (widget := item.widget()):
+                # deleteLater() alone leaves the old segment painted until the event loop runs.
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
         self.segments = []
 
@@ -132,12 +135,14 @@ class PathBar(QWidget):
     def build_menu(self, folder: str) -> QMenu:
         menu = QMenu(self)
         title = basename(folder) or "project root"
-        menu.addAction(f"Delete this folder ({title})").triggered.connect(
-            lambda: self.delete_folder_requested.emit(folder)
-        )
-        menu.addAction("Tag this folder…").triggered.connect(
-            lambda: self.tag_folder_requested.emit(folder)
-        )
+        delete = menu.addAction(f"Delete this folder ({title})")
+        delete.triggered.connect(lambda: self.delete_folder_requested.emit(folder))
+        tag = menu.addAction("Tag this folder…")
+        tag.triggered.connect(lambda: self.tag_folder_requested.emit(folder))
+        if folder == "":
+            # Folder actions never apply to the project root.
+            delete.setEnabled(False)
+            tag.setEnabled(False)
         menu.addSeparator()
         if self._provider is None:
             return menu
@@ -145,7 +150,11 @@ class PathBar(QWidget):
         current = self._path
         for entry in listing.entries[:MAX_MENU_ITEMS]:
             if entry.is_dir:
-                count = f"{entry.item_count:,} items" if entry.item_count is not None else ""
+                count = (
+                    f"{entry.item_count:,} item{'' if entry.item_count == 1 else 's'}"
+                    if entry.item_count is not None
+                    else ""
+                )
                 size = human_bytes(entry.size) if entry.size is not None else ""
                 detail = " · ".join(x for x in (count, size) if x)
                 text = f"{entry.name}/" + (f"    {detail}" if detail else "")

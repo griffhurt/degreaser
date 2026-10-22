@@ -16,11 +16,6 @@ hiddenimports = [
     "PySide6.QtMultimediaWidgets",
     "PySide6.QtPdf",
     "PySide6.QtPdfWidgets",
-    # Not imported by app code yet (M0); remove once real imports make them visible.
-    "pathspec",
-    "puremagic",
-    "charset_normalizer",
-    "PIL.Image",
     *collect_submodules("smbclient"),
     *collect_submodules("keyring.backends"),
 ]

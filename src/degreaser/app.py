@@ -8,6 +8,8 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from degreaser import __version__
+from degreaser.core import settings as settings_mod
+from degreaser.ui.controllers.app_controller import AppController
 from degreaser.ui.windows.projects import ProjectsWindow
 
 
@@ -33,13 +35,21 @@ def run(argv: list[str]) -> int:
     # Qt also ships a native macOS backend, but it can't play AVI/MKV/WMV and delivers no
     # frames headless (spikes/codecs/RESULTS.md). Must be set before QtMultimedia loads.
     os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
+    # Hide FFmpeg stream dumps; keep warnings.
+    os.environ.setdefault("QT_LOGGING_RULES", "qt.multimedia.*.info=false")
 
     app = QApplication([argv[0], *qt_args])
     app.setApplicationName("Degreaser")
     app.setApplicationVersion(__version__)
 
-    window = build_main_window()
-    window.show()
+    from degreaser.core.preview.cache import wipe_all_project_caches
+    from degreaser.ui.preview.ffmpeg_log import set_ffmpeg_log_level
+
+    set_ffmpeg_log_level()  # libav's own "[h264 @ 0x…]" lines bypass Qt logging
+    wipe_all_project_caches()  # previews left behind by a crash
+
+    controller = AppController(settings_mod.load())
+    controller.show()
 
     if args.smoke_test:
         from degreaser import diagnostics

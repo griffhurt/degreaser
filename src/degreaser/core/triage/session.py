@@ -25,7 +25,7 @@ from degreaser.core.db.connection import tx
 from degreaser.core.model import Category, Effective, EffectiveState, Origin, WalkSummary
 from degreaser.core.project import ProjectSettings
 from degreaser.core.rules.ruleset import RuleSet
-from degreaser.core.sources.base import basename, join, parent
+from degreaser.core.sources.base import basename, is_within, join, parent, subtree_range
 from degreaser.core.triage import history
 from degreaser.core.triage.order import DfsKey, dfs_key
 from degreaser.core.triage.resolver import Resolver
@@ -423,6 +423,51 @@ class TriageSession:
             return ActionResult(label, hid, self._advance_review(), deferred)
         return ActionResult(label, hid, self.advance(), deferred)
 
+    def review_set(self, paths: Sequence[str], action: str | None) -> ActionResult:
+        """Review screen: set (or clear, with None) many nodes' own decisions at once.
+
+        One undoable entry; the triage cursor doesn't move. Files take keep/delete/skip/None;
+        folders take delete/None (clearing a tag-folder also drops the folder's category).
+        """
+        if action not in (None, "keep", "delete", "skip"):
+            raise ValueError(f"unsupported review action {action!r}")
+        files = [p for p in paths if self._node_is_dir(p) is False]
+        dirs = [p for p in paths if self._node_is_dir(p)]
+        if dirs and action not in (None, "delete"):
+            raise ValueError("folders can only be marked for deletion or cleared here")
+        affected = [p for f in files for p in (f, *self._companions(f))]
+        before = {p: self.resolver.resolve(p) for p in affected}
+        verb = "Clear" if action is None else action.capitalize()
+        count = len(files) + len(dirs)
+        label = f"{verb} {basename(paths[0])}" if count == 1 else f"{verb} {count:,} items"
+        cursor_before = self.current.path if self.current else self._cursor
+        with tx(self.conn):
+            rec = history.Recorder(self.conn, label, cursor_before)
+            for path in files:
+                size, mtime = self._size_mtime(path)
+                row = None if action is None else _decision_row(False, action, size, mtime)
+                rec.set("decisions", path, row)
+                if action != "keep":
+                    rec.set("node_categories", path, None)
+                rec.set("nodes_flags", path, {"flag_new": 0, "flag_changed": 0})
+            for path in dirs:
+                rec.set(
+                    "decisions",
+                    path,
+                    None if action is None else _decision_row(True, action, None, None),
+                )
+                rec.set("node_categories", path, None)
+            hid = rec.finish()
+            if hid is not None:
+                bump_revision(self.conn)
+        self._after_changes(rec.changes, undoing=False)
+        if dirs:
+            self.tracker.mark_stale()  # subtree effects: the owner re-walks
+        else:
+            for p in affected:
+                self.tracker.apply_file(before[p], self.resolver.resolve(p), self._size(p))
+        return ActionResult(label, hid, None)
+
     # Folder actions -------------------------------------------------------------------------
 
     def default_folder(self) -> str:
@@ -452,7 +497,7 @@ class TriageSession:
         folder = self._folder(folder)
         blocked = self.resolver.dir_ctx(parent(folder)).deleted_by
         names = self.store.canonical(self._parse(category))
-        lo, hi = folder + "/", folder + "0"
+        lo, hi = subtree_range(folder)
         delete_marks = self.conn.execute(
             "SELECT count(*) FROM decisions WHERE path >= ? AND path < ? AND action = 'delete'",
             (lo, hi),
@@ -468,8 +513,9 @@ class TriageSession:
     ) -> ActionResult:
         """Keep a folder and set its category (empty = plain keep folder).
 
-        Clears delete marks beneath it. With replace_conflicting, descendants whose own
-        category doesn't refine the new one lose it and inherit the folder's instead.
+        Clears delete, skip and deferred marks beneath it. With replace_conflicting,
+        descendants whose own category doesn't refine the new one lose it and inherit the
+        folder's instead.
         """
         folder = self._folder(folder)
         blocked = self.resolver.dir_ctx(parent(folder)).deleted_by
@@ -486,11 +532,13 @@ class TriageSession:
         def write(rec: history.Recorder) -> None:
             rec.set("decisions", folder, _decision_row(True, "keep", None, None))
             self._set_own_category(rec, folder, names)
-            lo, hi = folder + "/", folder + "0"
+            lo, hi = subtree_range(folder)
             for (p,) in self.conn.execute(
-                "SELECT path FROM decisions WHERE path >= ? AND path < ? AND action = 'delete'",
+                "SELECT path FROM decisions WHERE path >= ? AND path < ?"
+                " AND action IN ('delete', 'skip', 'deferred')",
                 (lo, hi),
             ).fetchall():
+                # "Tag folder" keeps everything inside, including skipped/deferred files.
                 rec.set("decisions", p, None)
             for p in conflicting:
                 rec.set("node_categories", p, None)
@@ -618,8 +666,8 @@ class TriageSession:
                 files.append(key)
         # Changes beneath a changed folder are covered by that folder's subtree.
         folders = sorted(set(folders))
-        top = [f for f in folders if not any(f.startswith(o + "/") for o in folders)]
-        files = [f for f in set(files) if not any(f.startswith(o + "/") for o in top)]
+        top = [f for f in folders if not any(o != f and is_within(f, o) for o in folders)]
+        files = [f for f in set(files) if not any(is_within(f, o) for o in top)]
         for f in [*top, *list(files)]:
             files.extend(c for c in self._companions(f) if c not in files)
         return top, files
@@ -675,7 +723,7 @@ class TriageSession:
         if not category:
             return []
         want = tuple(t.casefold() for t in category)
-        lo, hi = folder + "/", folder + "0"
+        lo, hi = subtree_range(folder)
         out = []
         for p, cid in self.conn.execute(
             "SELECT path, category_id FROM node_categories WHERE path >= ? AND path < ?"

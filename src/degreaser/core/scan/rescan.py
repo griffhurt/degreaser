@@ -34,12 +34,11 @@ from degreaser.core.scan.common import (
     finish_scan,
     insert_entries,
     start_scan,
-    subtree_range,
     usable_entries,
 )
 from degreaser.core.scan.indexer import compute_rollups, index_complete
 from degreaser.core.sortkey import sort_key
-from degreaser.core.sources.base import Entry, FileSource, ancestors, join
+from degreaser.core.sources.base import Entry, FileSource, ancestors, join, subtree_range
 from degreaser.core.sources.errors import NotFound, SourceError, TransientSourceError
 
 log = logging.getLogger(__name__)

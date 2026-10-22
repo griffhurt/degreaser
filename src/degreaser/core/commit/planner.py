@@ -17,8 +17,7 @@ from degreaser.core.commit.trash import batch_path
 from degreaser.core.db.connection import tx
 from degreaser.core.model import DeleteTarget, WalkResult
 from degreaser.core.project import ProjectSettings
-from degreaser.core.scan.common import subtree_range
-from degreaser.core.sources.base import ancestors
+from degreaser.core.sources.base import ancestors, subtree_range
 
 
 @dataclass(frozen=True, slots=True)

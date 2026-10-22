@@ -33,6 +33,14 @@ def collect() -> dict[str, Any]:
         report["errors"].append(f"QtMultimedia: {exc!r}")
 
     try:
+        from degreaser.ui.preview.ffmpeg_log import set_ffmpeg_log_level
+
+        # Not an error if False: only FFmpeg's stderr noise comes back.
+        report["ffmpeg_log_hook"] = set_ffmpeg_log_level()
+    except Exception as exc:
+        report["errors"].append(f"ffmpeg_log: {exc!r}")
+
+    try:
         from PySide6.QtPdf import QPdfDocument
 
         QPdfDocument()

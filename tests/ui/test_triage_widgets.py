@@ -2,9 +2,10 @@ from pytestqt.qtbot import QtBot
 
 from degreaser.core.model import Effective, Origin
 from degreaser.core.settings import DEFAULT_KEYMAP
+from degreaser.core.triage.session import Banner as BannerKind
 from degreaser.ui.keymap import Keymap
 from degreaser.ui.widgets.action_bar import ActionBar
-from degreaser.ui.widgets.banner import Banner, BannerKind
+from degreaser.ui.widgets.banner import Banner
 from degreaser.ui.widgets.path_bar import FolderEntry, FolderListing, PathBar
 
 

@@ -86,6 +86,15 @@ def ancestors(rel: str) -> list[str]:
     return ["", *("/".join(parts[:i]) for i in range(1, len(parts)))]
 
 
+def subtree_range(folder: str) -> tuple[str, str]:
+    """Bounds for `path >= lo AND path < hi` covering everything strictly beneath folder.
+
+    '0' is the character after '/', so [folder/, folder0) is exactly the subtree; the root
+    ("") covers every non-empty path.
+    """
+    return (folder + "/", folder + "0") if folder else ("\x01", "\U0010ffff")
+
+
 def is_within(rel: str, folder: str) -> bool:
     """True if rel is folder itself or anywhere beneath it."""
     return folder == "" or rel == folder or rel.startswith(folder + "/")
