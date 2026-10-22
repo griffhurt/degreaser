@@ -40,7 +40,7 @@ def format_size(n: int | None) -> str:
     if n is None:
         return "—"
     if n < 1024:
-        return f"{n:,} bytes"
+        return "1 byte" if n == 1 else f"{n:,} bytes"
     size = float(n)
     for unit in ("KB", "MB", "GB", "TB"):
         size /= 1024

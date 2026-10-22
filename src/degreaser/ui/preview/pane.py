@@ -34,10 +34,12 @@ from degreaser.core.preview.metadata import (
     symlink_rows,
     zip_rows,
 )
+from degreaser.core.preview.office import OfficeDocument, OfficeError, load_office
 from degreaser.core.preview.plan import EXIF_PREFIX, Confirm, Plan, Strategy, plan_preview
 from degreaser.core.settings import Downloads, Video
 from degreaser.core.sources.base import Entry, FileSource
 from degreaser.ui.preview.archive import ArchiveView
+from degreaser.ui.preview.document import DocumentView
 from degreaser.ui.preview.hex import HexView
 from degreaser.ui.preview.image import ImageView, decode_image
 from degreaser.ui.preview.media import MediaView
@@ -266,6 +268,8 @@ class PreviewPane(QWidget):
                 self._start_pdf(prepared)
             case Strategy.MEDIA:
                 self._start_media(prepared)
+            case Strategy.DOCUMENT:
+                self._start_document(prepared)
             case Strategy.ZIP_LISTING:
                 self._start_zip(prepared)
             case Strategy.NONE:
@@ -519,7 +523,60 @@ class PreviewPane(QWidget):
         else:
             download()
 
-    def _start_zip(self, prepared: _Prepared) -> None:
+    def _start_document(self, prepared: _Prepared) -> None:
+        """Office / OpenDocument / iWork: parse the needed parts; fall back to the listing."""
+        source, rel, entry = self._source, self.rel, self._entry
+        assert source and rel is not None and entry
+        gen, cancel = self._gen, self._cancel
+        label = prepared.detection.label
+
+        def show(doc: object) -> None:
+            assert isinstance(doc, OfficeDocument)
+            view = DocumentView(doc)
+            self._set_view(view)
+            self._replace_group("Document", doc.metadata)
+            view.loadMoreRequested.connect(lambda: self._expand() if self._expand else None)
+            self._expand = (lambda: load_more(view)) if doc.can_expand else None
+            self._finish_loading()
+
+        def load_more(view: DocumentView) -> None:
+            more_gen, more_cancel, doc = self._gen, self._cancel, view.doc
+            view.set_busy(True)
+            self._expand = None
+
+            def done(bigger: object) -> None:
+                assert isinstance(bigger, OfficeDocument)
+                view.set_busy(False)
+                view.set_document(bigger)
+                self._expand = (lambda: load_more(view)) if bigger.can_expand else None
+
+            self.worker.submit(
+                lambda _p: doc.expand(more_cancel),
+                lambda r: self._guard(more_gen, done, r),
+                lambda e: self._guard(more_gen, self._on_failed, e),
+            )
+
+        def fallback(exc: BaseException) -> None:
+            if isinstance(exc, Cancelled):
+                return
+            reason = str(exc) or type(exc).__name__
+            if not isinstance(exc, OfficeError):
+                reason = f"couldn't be read ({reason})"
+            self._rows.append(
+                MetaRow("Document", "Preview", f"unavailable: {reason}", warning=True)
+            )
+            self._emit_rows()
+            self._start_zip(
+                prepared, note=f"No {label} preview: {reason}. Showing the files inside."
+            )
+
+        self.worker.submit(
+            lambda _p: load_office(source, rel, entry, cancel),
+            lambda r: self._guard(gen, show, r),
+            lambda e: self._guard(gen, fallback, e),
+        )
+
+    def _start_zip(self, prepared: _Prepared, note: str = "") -> None:
         source, rel, entry = self._source, self.rel, self._entry
         assert source and rel is not None and entry
         gen, cancel = self._gen, self._cancel
@@ -528,7 +585,7 @@ class PreviewPane(QWidget):
             from degreaser.core.preview.loaders import ZipListing
 
             assert isinstance(listing, ZipListing)
-            self._set_view(ArchiveView(listing))
+            self._set_view(ArchiveView(listing, note=note))
             self._replace_group("Archive", zip_rows(listing))
             self._finish_loading()
 

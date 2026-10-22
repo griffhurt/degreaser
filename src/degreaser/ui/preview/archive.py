@@ -17,10 +17,17 @@ MAX_ROWS = 5_000
 
 
 class ArchiveView(QWidget):
-    def __init__(self, listing: ZipListing, parent: QWidget | None = None) -> None:
+    def __init__(self, listing: ZipListing, note: str = "", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        # e.g. why a document preview fell back to the listing
+        self.note = QLabel(note)
+        self.note.setProperty("role", "muted")
+        self.note.setWordWrap(True)
+        self.note.setContentsMargins(8, 6, 8, 6)
+        self.note.setVisible(bool(note))
+        layout.addWidget(self.note)
         self.table = QTreeWidget()
         self.table.setRootIsDecorated(False)
         self.table.setUniformRowHeights(True)

@@ -73,7 +73,12 @@ def test_zip_family_labels() -> None:
     data = zip_bytes()
     assert detect_bytes("archive.zip", data).label == "Zip archive"
     docx = detect_bytes("report.docx", data)
-    assert (docx.kind, docx.label, docx.extension_mismatch) == (Kind.ZIP, "Word document", False)
+    # Office files are zips underneath; the document loader checks the contents.
+    assert (docx.kind, docx.label, docx.extension_mismatch) == (
+        Kind.DOCUMENT,
+        "Word document",
+        False,
+    )
     assert detect_bytes("lib.jar", data).label == "Java archive"
     assert detect_bytes("mystery", data).label == "Zip archive"
 

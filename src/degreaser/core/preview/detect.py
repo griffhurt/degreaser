@@ -24,6 +24,7 @@ class Kind(StrEnum):
     VIDEO = "video"
     AUDIO = "audio"
     PDF = "pdf"
+    DOCUMENT = "document"  # Office / OpenDocument / iWork: zip-based, confirmed by contents
     ZIP = "zip"
     BINARY = "binary"
 
@@ -102,10 +103,22 @@ _add(Kind.PDF, "PDF document", "application/pdf", "pdf")
 _add(Kind.ZIP, "Zip archive", "application/zip", "zip")
 _add(Kind.ZIP, "Java archive", "application/java-archive", "jar", "war", "ear")
 _OOXML = "application/vnd.openxmlformats-officedocument."
-_add(Kind.ZIP, "Word document", _OOXML + "wordprocessingml.document", "docx", "docm")
-_add(Kind.ZIP, "Excel workbook", _OOXML + "spreadsheetml.sheet", "xlsx", "xlsm")
-_add(Kind.ZIP, "PowerPoint presentation", _OOXML + "presentationml.presentation", "pptx", "pptm")
-_add(Kind.ZIP, "OpenDocument file", "application/vnd.oasis.opendocument", "odt", "ods", "odp")
+_ODF = "application/vnd.oasis.opendocument."
+_add(Kind.DOCUMENT, "Word document", _OOXML + "wordprocessingml.document", "docx", "docm")
+_add(Kind.DOCUMENT, "Word template", _OOXML + "wordprocessingml.template", "dotx", "dotm")
+_add(Kind.DOCUMENT, "Excel workbook", _OOXML + "spreadsheetml.sheet", "xlsx", "xlsm")
+_add(Kind.DOCUMENT, "Excel template", _OOXML + "spreadsheetml.template", "xltx", "xltm")
+_add(
+    Kind.DOCUMENT, "PowerPoint presentation", _OOXML + "presentationml.presentation", "pptx", "pptm"
+)
+_add(Kind.DOCUMENT, "PowerPoint slide show", _OOXML + "presentationml.slideshow", "ppsx", "ppsm")
+_add(Kind.DOCUMENT, "PowerPoint template", _OOXML + "presentationml.template", "potx", "potm")
+_add(Kind.DOCUMENT, "OpenDocument text", _ODF + "text", "odt", "ott")
+_add(Kind.DOCUMENT, "OpenDocument spreadsheet", _ODF + "spreadsheet", "ods", "ots")
+_add(Kind.DOCUMENT, "OpenDocument presentation", _ODF + "presentation", "odp", "otp")
+_add(Kind.DOCUMENT, "Pages document", "application/vnd.apple.pages", "pages")
+_add(Kind.DOCUMENT, "Numbers spreadsheet", "application/vnd.apple.numbers", "numbers")
+_add(Kind.DOCUMENT, "Keynote presentation", "application/vnd.apple.keynote", "key")
 _add(Kind.ZIP, "EPUB book", "application/epub+zip", "epub")
 _add(Kind.ZIP, "Android package", "application/vnd.android.package-archive", "apk")
 _add(Kind.ZIP, "Comic book archive", "application/vnd.comicbook+zip", "cbz")
@@ -213,7 +226,7 @@ def _by_magic(
     if claimed is not None and any(_compatible(claimed, c) for c in candidates):
         # e.g. a .zip whose magic also matches docx/xlsx: keep what the extension says.
         return claimed
-    if candidates[0][0] == Kind.ZIP:
+    if candidates[0][0] in (Kind.ZIP, Kind.DOCUMENT):
         # Every zip-based format matches; without a matching extension it's just a zip.
         return _EXT["zip"]
     return candidates[0]
@@ -287,7 +300,8 @@ def detect_bytes(name: str, head: bytes) -> Detection:
         if claimed is not None and claimed[0] in (Kind.TEXT, Kind.CODE):
             kind, mime, label = claimed
             return Detection(kind, label, mime, encoding=encoding, bom=bom)
-        mismatch = claimed is not None
+        # ".key" is also the usual name for PEM/SSH key files, which are text: no warning.
+        mismatch = claimed is not None and ext != "key"
         return Detection(
             Kind.TEXT,
             "Text file",
@@ -317,8 +331,11 @@ def detect_bytes(name: str, head: bytes) -> Detection:
 def _compatible(claimed: tuple[Kind, str | None, str], found: tuple[Kind, str | None, str]) -> bool:
     if claimed == found:
         return True
-    if claimed[0] == found[0] and claimed[0] in (Kind.ZIP, Kind.VIDEO, Kind.AUDIO):
-        # docx-vs-zip, mp4-vs-mov, m4a-vs-mp4 and friends share containers.
+    if claimed[0] == found[0] and claimed[0] in (Kind.ZIP, Kind.DOCUMENT, Kind.VIDEO, Kind.AUDIO):
+        # docx-vs-xlsx, mp4-vs-mov, m4a-vs-mp4 and friends share containers.
+        return True
+    if {claimed[0], found[0]} == {Kind.ZIP, Kind.DOCUMENT}:
+        # Office/OpenDocument/iWork files are zips; the document loader checks the contents.
         return True
     # Audio-only files in video containers (and vice versa) are fine.
     return {claimed[0], found[0]} == {Kind.AUDIO, Kind.VIDEO}

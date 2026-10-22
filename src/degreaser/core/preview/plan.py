@@ -21,6 +21,7 @@ class Strategy(StrEnum):
     IMAGE = "image"  # (JPEG: EXIF thumbnail from the prefix first) then the full file
     PDF = "pdf"  # needs the full file
     MEDIA = "media"  # streamed: local path now, loopback media server for SMB (M2)
+    DOCUMENT = "document"  # Office/OpenDocument/iWork: range reads of the needed zip parts
     ZIP_LISTING = "zip_listing"  # range reads of the tail only
     NONE = "none"  # metadata + Open only
 
@@ -75,6 +76,10 @@ def plan_preview(detection: Detection, entry: Entry, limits: Downloads, *, local
             # Streaming works for every tested container (spikes/codecs, spikes/smb_streaming),
             # so media never needs the whole file up front.
             return Plan(Strategy.MEDIA)
+        case Kind.DOCUMENT:
+            # Only the central directory and a few XML parts are read, with hard caps
+            # (core/preview/office.py), so no size prompt is needed.
+            return Plan(Strategy.DOCUMENT)
         case Kind.ZIP:
             return Plan(Strategy.ZIP_LISTING)
         case Kind.BINARY:

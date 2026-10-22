@@ -21,10 +21,9 @@ class MessageView(QWidget):
         layout.addStretch(1)
         self.title = QLabel(title)
         self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        font = self.title.font()
-        font.setPointSizeF(font.pointSizeF() * 1.3)
-        font.setBold(True)
-        self.title.setFont(font)
+        # The app stylesheet sets fonts in pixels (pointSize is -1), and it would override
+        # setFont() anyway, so size the title through the stylesheet.
+        self.title.setStyleSheet("font-size: 17px; font-weight: 600;")
         layout.addWidget(self.title)
         self.text = QLabel(text)
         self.text.setAlignment(Qt.AlignmentFlag.AlignCenter)
