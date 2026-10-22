@@ -1,17 +1,19 @@
 """Home window: the project list (docs/product-spec.md §3.1)."""
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSizePolicy,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -25,8 +27,93 @@ from degreaser.core.project import (
 )
 from degreaser.ui.dialogs.project_edit import ProjectEditDialog, ProjectForm
 from degreaser.ui.format import human_bytes, relative_time
+from degreaser.ui.theme import icon, pixmap, theme
 
-COLUMNS = ["Name", "Source", "Triaged", "Marked for delete", "Last opened"]
+
+def _restyle(widget: QWidget) -> None:
+    """Re-apply the stylesheet after a dynamic property changed."""
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
+
+
+class ProjectCard(QFrame):
+    def __init__(self, info: ProjectInfo) -> None:
+        super().__init__()
+        self.info = info
+        self.setProperty("role", "card")
+        self.setProperty("selected", False)
+        t = theme().tokens
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 14, 18, 14)
+        layout.setSpacing(14)
+
+        badge = QLabel()
+        badge.setFixedSize(40, 40)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setStyleSheet(f"background: {t.accent_tint}; border-radius: 10px;")
+        kind = "server" if info.source.get("type") == "smb" else "hard-drive"
+        badge.setPixmap(pixmap(kind, t.accent, 20))
+        layout.addWidget(badge)
+
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        self.name_label = QLabel(info.name)
+        self.name_label.setStyleSheet("font-size: 15px; font-weight: 600;")
+        self.source_label = QLabel(info.source_description)
+        self.source_label.setProperty("role", "muted")
+        self.source_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        text.addWidget(self.name_label)
+        text.addWidget(self.source_label)
+        layout.addLayout(text, 1)
+
+        summary = info.last_summary or {}
+        known, triaged = summary.get("files_known"), summary.get("files_triaged")
+        stats = QVBoxLayout()
+        stats.setSpacing(5)
+        if known and triaged is not None:
+            fraction = triaged / known
+            self.progress_label = QLabel(f"{fraction:.0%} triaged")
+            bar = QProgressBar()
+            bar.setRange(0, 1000)
+            bar.setValue(round(fraction * 1000))
+        else:
+            self.progress_label = QLabel("Not started")
+            bar = QProgressBar()
+            bar.setRange(0, 1)
+            bar.setValue(0)
+        bar.setFixedWidth(170)
+        self.progress_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.progress_label.setStyleSheet("font-weight: 500;")
+        bytes_delete = summary.get("bytes_delete")
+        self.delete_label = QLabel(
+            f"{human_bytes(bytes_delete)} to delete"
+            if bytes_delete
+            else "Nothing marked for deletion"
+        )
+        self.delete_label.setProperty("role", "faint")
+        self.delete_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.opened_label = QLabel(f"Opened {relative_time(info.last_opened)}")
+        self.opened_label.setProperty("role", "faint")
+        self.opened_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        stats.addWidget(self.progress_label)
+        stats.addWidget(bar, 0, Qt.AlignmentFlag.AlignRight)
+        stats.addWidget(self.delete_label)
+        stats.addWidget(self.opened_label)
+        layout.addLayout(stats)
+
+    def set_selected(self, selected: bool) -> None:
+        self.setProperty("selected", selected)
+        _restyle(self)
+
+
+class _CardList(QListWidget):
+    activated_project = Signal()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.activated_project.emit()
+            return
+        super().keyPressEvent(event)
 
 
 class ProjectsWindow(QMainWindow):
@@ -35,45 +122,75 @@ class ProjectsWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Degreaser")
-        self.resize(900, 480)
+        self.resize(920, 620)
         self._infos: list[ProjectInfo] = []
+        self.cards: list[ProjectCard] = []
+        t = theme().tokens
 
         central = QWidget()
+        central.setObjectName("central")
         layout = QVBoxLayout(central)
-        self.title_label = QLabel("<h2>Projects</h2>")
+        layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(16)
+
+        header = QHBoxLayout()
+        titles = QVBoxLayout()
+        titles.setSpacing(2)
+        self.title_label = QLabel("Projects")
+        self.title_label.setProperty("role", "title")
         # Never grow vertically: a taller label centres its text and the header drifts down.
         self.title_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        layout.addWidget(self.title_label)
+        subtitle = QLabel("Work through a folder one file at a time, then commit.")
+        subtitle.setProperty("role", "muted")
+        titles.addWidget(self.title_label)
+        titles.addWidget(subtitle)
+        header.addLayout(titles, 1)
+        self.new_button = QPushButton("New Project")
+        self.new_button.setProperty("variant", "primary")
+        self.new_button.setIcon(icon("plus", t.accent_text, 16))
+        self.new_button.clicked.connect(self._new)
+        header.addWidget(self.new_button, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addLayout(header)
 
-        self.table = QTableWidget(0, len(COLUMNS))
-        self.table.setHorizontalHeaderLabels(COLUMNS)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.verticalHeader().hide()
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.table.doubleClicked.connect(lambda _: self._open())
-        self.table.itemSelectionChanged.connect(self._update_buttons)
-        layout.addWidget(self.table, 1)
+        self.list = _CardList()
+        self.list.setProperty("variant", "cards")
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.list.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.list.itemDoubleClicked.connect(lambda _item: self._open())
+        self.list.activated_project.connect(self._open)
+        self.list.currentRowChanged.connect(self._selection_changed)
+        layout.addWidget(self.list, 1)
 
-        self.empty_label = QLabel("No projects yet. Create one to start triaging a folder.")
-        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # Takes the table's space when there are no projects, so the header stays at the top.
+        # Empty state (replaces the list when there are no projects).
+        self.empty_label = QWidget()
+        empty = QVBoxLayout(self.empty_label)
+        empty.addStretch()
+        empty_icon = QLabel()
+        empty_icon.setPixmap(pixmap("inbox", t.text_faint, 48, 1.5))
+        empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_title = QLabel("No projects yet")
+        empty_title.setProperty("role", "heading")
+        empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_text = QLabel("Create a project for a folder you want to clean up.")
+        empty_text.setProperty("role", "muted")
+        empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        for w in (empty_icon, empty_title, empty_text):
+            empty.addWidget(w)
+        empty.addStretch()
         layout.addWidget(self.empty_label, 1)
 
         buttons = QHBoxLayout()
-        self.new_button = QPushButton("New Project…")
-        self.open_button = QPushButton("Open")
         self.edit_button = QPushButton("Edit…")
         self.remove_button = QPushButton("Remove…")
-        self.new_button.clicked.connect(self._new)
-        self.open_button.clicked.connect(self._open)
+        self.remove_button.setProperty("variant", "danger")
+        self.open_button = QPushButton("Open")
+        self.open_button.setProperty("variant", "primary")
         self.edit_button.clicked.connect(self._edit)
         self.remove_button.clicked.connect(self._remove)
-        self.open_button.setDefault(True)
-        for b in (self.new_button, self.edit_button, self.remove_button):
-            buttons.addWidget(b)
+        self.open_button.clicked.connect(self._open)
+        buttons.addWidget(self.edit_button)
+        buttons.addWidget(self.remove_button)
         buttons.addStretch()
         buttons.addWidget(self.open_button)
         layout.addLayout(buttons)
@@ -83,36 +200,35 @@ class ProjectsWindow(QMainWindow):
 
     def refresh(self) -> None:
         self._infos = list_projects()
-        self.table.setRowCount(len(self._infos))
-        for row, info in enumerate(self._infos):
-            summary = info.last_summary or {}
-            known = summary.get("files_known")
-            triaged = summary.get("files_triaged")
-            progress = f"{triaged / known:.0%}" if known and triaged is not None else "—"
-            values = [
-                info.name,
-                info.source_description,
-                progress,
-                human_bytes(summary.get("bytes_delete")),
-                relative_time(info.last_opened),
-            ]
-            for col, value in enumerate(values):
-                self.table.setItem(row, col, QTableWidgetItem(value))
-        self.table.resizeColumnsToContents()
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.empty_label.setVisible(not self._infos)
-        self.table.setVisible(bool(self._infos))
-        if self._infos:
-            self.table.selectRow(0)
+        self.list.clear()
+        self.cards = []
+        for info in self._infos:
+            card = ProjectCard(info)
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, card.sizeHint().height() + 8))
+            self.list.addItem(item)
+            self.list.setItemWidget(item, card)
+            self.cards.append(card)
+        has = bool(self._infos)
+        self.empty_label.setVisible(not has)
+        self.list.setVisible(has)
+        if has:
+            self.list.setCurrentRow(0)
+        self._update_buttons()
+
+    def _selection_changed(self, row: int) -> None:
+        for i, card in enumerate(self.cards):
+            card.set_selected(i == row)
         self._update_buttons()
 
     def _selected(self) -> ProjectInfo | None:
-        rows = self.table.selectionModel().selectedRows()
-        return self._infos[rows[0].row()] if rows else None
+        row = self.list.currentRow()
+        return self._infos[row] if 0 <= row < len(self._infos) else None
 
     def _update_buttons(self) -> None:
         has = self._selected() is not None
         for b in (self.open_button, self.edit_button, self.remove_button):
+            b.setVisible(bool(self._infos))
             b.setEnabled(has)
 
     def _new(self) -> None:

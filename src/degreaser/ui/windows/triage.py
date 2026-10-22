@@ -5,8 +5,9 @@ from dataclasses import asdict
 from typing import Any
 
 from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QShortcut
+from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QResizeEvent, QShortcut
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -44,15 +45,38 @@ from degreaser.ui.dialogs.project_edit import ProjectEditDialog, ProjectForm
 from degreaser.ui.format import human_bytes, human_count
 from degreaser.ui.keymap import Keymap
 from degreaser.ui.preview.pane import PreviewPane
+from degreaser.ui.theme import pixmap, theme
 from degreaser.ui.widgets.action_bar import ActionBar
 from degreaser.ui.widgets.banner import Banner as BannerWidget
 from degreaser.ui.widgets.category_input import CategoryInput
 from degreaser.ui.widgets.icons import STATE_LABELS
 from degreaser.ui.widgets.metadata_table import MetadataTable
 from degreaser.ui.widgets.path_bar import FolderEntry, FolderListing, PathBar
+from degreaser.ui.widgets.toast import Toast
 from degreaser.ui.windows.review import ReviewWindow
 
 PATH_BAR_LIMIT = 500
+
+
+_PAST = {
+    "Keep folder": "Kept folder",
+    "Delete folder": "Marked folder for deletion:",
+    "Tag folder": "Tagged folder",
+    "Unmark folder": "Unmarked folder",
+    "Keep": "Kept",
+    "Delete": "Marked for deletion:",
+    "Skip": "Skipped",
+    "Defer": "Deferred",
+    "Tag": "Tagged",
+}
+
+
+def past_tense(label: str) -> str:
+    """'Keep a.txt' → 'Kept a.txt' for action feedback."""
+    for verb, past in _PAST.items():
+        if label.startswith(verb + " "):
+            return past + label[len(verb) :]
+    return label
 
 
 def describe_state(state: EffectiveState) -> str:
@@ -94,27 +118,65 @@ class TriageWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         central = QWidget()
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(8, 4, 8, 4)
+        central.setObjectName("central")
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
+        # Top bar: breadcrumb, progress pill, review button.
+        toolbar = QFrame()
+        toolbar.setProperty("role", "toolbar")
+        top = QHBoxLayout(toolbar)
+        top.setContentsMargins(12, 8, 12, 8)
+        top.setSpacing(10)
         self.path_bar = PathBar()
         self.path_bar.set_children_provider(self.folder_listing)
         self.path_bar.jump_requested.connect(self.jump_to)
         self.path_bar.keep_folder_requested.connect(self.keep_folder)
         self.path_bar.delete_folder_requested.connect(self.delete_folder)
         self.path_bar.tag_folder_requested.connect(self.tag_folder)
-        layout.addWidget(self.path_bar)
+        top.addWidget(self.path_bar, 1)
+        pill = QFrame()
+        pill.setProperty("role", "pill")
+        pill_layout = QHBoxLayout(pill)
+        pill_layout.setContentsMargins(12, 4, 12, 4)
+        self.summary_label = QLabel()
+        self.summary_label.setProperty("role", "muted")
+        pill_layout.addWidget(self.summary_label)
+        top.addWidget(pill)
+        self.mode_label = QLabel()
+        self.mode_label.setProperty("role", "muted")
+        self.index_label = QLabel()
+        self.index_label.setProperty("role", "faint")
+        top.addWidget(self.mode_label)
+        top.addWidget(self.index_label)
+        self.review_button = QPushButton("Review && Commit")
+        self.review_button.setProperty("variant", "primary")
+        self.review_button.clicked.connect(self.open_review)
+        top.addWidget(self.review_button)
+        root.addWidget(toolbar)
 
+        body = QVBoxLayout()
+        body.setContentsMargins(14, 12, 14, 12)
+        body.setSpacing(10)
         self.banner = BannerWidget()
-        layout.addWidget(self.banner)
+        body.addWidget(self.banner)
 
         # Page 0: file under triage; page 1: messages (loading folder, sweep, done).
         self.stack = QStackedWidget()
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.preview = self._make_preview()
         self.metadata = self._make_metadata_table()
-        splitter.addWidget(self.preview)
-        splitter.addWidget(self.metadata)
+        splitter.addWidget(self._card(self.preview, padding=1))
+        details = QFrame()
+        details.setProperty("role", "card")
+        details_layout = QVBoxLayout(details)
+        details_layout.setContentsMargins(14, 12, 6, 6)
+        heading = QLabel("Details")
+        heading.setProperty("role", "heading")
+        details_layout.addWidget(heading)
+        details_layout.addWidget(self.metadata, 1)
+        splitter.addWidget(details)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([900, 340])
@@ -123,6 +185,9 @@ class TriageWindow(QMainWindow):
         self.message_page = QWidget()
         message_layout = QVBoxLayout(self.message_page)
         message_layout.addStretch()
+        self.message_icon = QLabel()
+        self.message_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message_layout.addWidget(self.message_icon)
         self.message_label = QLabel()
         self.message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.message_label.setWordWrap(True)
@@ -131,36 +196,54 @@ class TriageWindow(QMainWindow):
         buttons.addStretch()
         self.review_skipped_button = QPushButton()
         self.review_skipped_button.clicked.connect(self.start_review_skipped)
-        self.review_commit_button = QPushButton("Review && commit…")
+        self.review_commit_button = QPushButton("Review && Commit…")
+        self.review_commit_button.setProperty("variant", "primary")
         self.review_commit_button.clicked.connect(self.open_review)
         buttons.addWidget(self.review_skipped_button)
         buttons.addWidget(self.review_commit_button)
         buttons.addStretch()
+        message_layout.addSpacing(8)
         message_layout.addLayout(buttons)
         message_layout.addStretch()
         self.stack.addWidget(self.message_page)
-        layout.addWidget(self.stack, 1)
+        body.addWidget(self.stack, 1)
 
         self.category_input = CategoryInput()
         self.category_input.hide()
         self.category_input.submitted.connect(self._category_submitted)
         self.category_input.cancelled.connect(self._category_cancelled)
-        layout.addWidget(self.category_input)
+        self.category_input.opened.connect(lambda: self.toast.hide())
+        body.addWidget(self.category_input)
+        root.addLayout(body, 1)
 
         self.action_bar = ActionBar(self.keymap)
         self.action_bar.triggered.connect(self.trigger)
-        layout.addWidget(self.action_bar)
+        root.addWidget(self.action_bar)
         self.setCentralWidget(central)
 
-        self.summary_label = QLabel()
-        self.mode_label = QLabel()
-        self.index_label = QLabel()
-        status = self.statusBar()
-        # Permanent widgets stay visible while showMessage() shows action feedback.
-        status.addPermanentWidget(self.summary_label, 1)
-        status.addPermanentWidget(self.mode_label)
-        status.addPermanentWidget(self.index_label)
+        self.toast = Toast(central)
+
+        # Status lives in the top bar; no status-bar strip under the action bar.
+        self.statusBar().hide()
         self._update_summary()
+
+    @staticmethod
+    def _card(widget: QWidget, padding: int = 0) -> QFrame:
+        card = QFrame()
+        card.setProperty("role", "card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(padding, padding, padding, padding)
+        layout.addWidget(widget)
+        return card
+
+    def notify(self, message: str, hint: str = "", ms: int = 1800) -> None:
+        self.toast.bottom_margin = self.action_bar.height() + 14
+        self.toast.show_message(message, hint, ms)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.toast.bottom_margin = self.action_bar.height() + 14
+        self.toast.reposition()
 
     def _make_preview(self) -> PreviewPane:
         self.preview_cache = PreviewCache(self.project.cache_dir)
@@ -224,10 +307,10 @@ class TriageWindow(QMainWindow):
         if advance.item is not None:
             self.show_item(advance.item)
         elif advance.needs_listing is not None:
-            self._show_message(f"Loading folder “{advance.needs_listing or 'project root'}”…")
+            self._show_message("Loading folder…", advance.needs_listing or self.project.name)
             self._list_then_advance(advance.needs_listing)
         elif advance.needs_sweep:
-            self._show_message("Checking for anything missed…")
+            self._show_message("Checking for anything missed…", icon="search")
             self._run_sweep()
         else:
             self._show_done()
@@ -274,9 +357,16 @@ class TriageWindow(QMainWindow):
             rows.append(("Category", f"{format_category(state.category)}  (from {where})"))
         return rows
 
-    def _show_message(self, html: str, *, done: bool = False) -> None:
+    def _show_message(
+        self, title: str, body: str = "", *, icon: str = "loader-circle", done: bool = False
+    ) -> None:
+        t = theme().tokens
         self.stack.setCurrentIndex(1)
-        self.message_label.setText(html)
+        self.message_icon.setPixmap(pixmap(icon, t.success if done else t.text_faint, 44, 1.5))
+        body_html = f"<p style='color:{t.text_muted}'>{body}</p>" if body else ""
+        self.message_label.setText(
+            f"<p style='font-size:20px; font-weight:600'>{title}</p>{body_html}"
+        )
         self.banner.show_kind(None)
         for button in (self.review_skipped_button, self.review_commit_button):
             button.setVisible(done)
@@ -293,8 +383,8 @@ class TriageWindow(QMainWindow):
         if summary is not None:
             files, size = human_count(summary.files_delete), human_bytes(summary.bytes_delete)
             categorised = human_count(summary.files_categorised)
-            detail = f"<p>{files} files ({size}) to delete · {categorised} categorised</p>"
-        self._show_message(f"<h2>Nothing left to triage</h2>{detail}", done=True)
+            detail = f"{files} files ({size}) to delete · {categorised} categorised"
+        self._show_message("Nothing left to triage", detail, icon="circle-check", done=True)
         self.mode_label.setText("")
 
     def _entry(self, path: str) -> Entry | None:
@@ -358,7 +448,7 @@ class TriageWindow(QMainWindow):
                 self.expand_preview()
 
     def _apply(self, result: ActionResult) -> None:
-        self.statusBar().showMessage(result.label, 2500)
+        self.notify(past_tense(result.label), f"{self.keymap.label('undo')} to undo")
         self.show_advance(result.advance)
 
     def jump_to(self, path: str) -> None:
@@ -623,10 +713,10 @@ class TriageWindow(QMainWindow):
         if summary is None:
             self.summary_label.setText("Counting files…")
             return
-        stale = " (updating…)" if self.session.tracker.stale else ""
+        stale = " …" if self.session.tracker.stale else ""
         self.summary_label.setText(
             f"{human_count(summary.files_triaged)} / {human_count(summary.files_known)} triaged"
-            f" · {human_bytes(summary.bytes_delete)} marked for delete{stale}"
+            f"  ·  {human_bytes(summary.bytes_delete)} to delete{stale}"
         )
 
     # Review, commit, settings ---------------------------------------------------------------
@@ -707,7 +797,7 @@ class TriageWindow(QMainWindow):
         )
         if answer == QMessageBox.StandardButton.Yes:
             empty_trash(self.source)
-            self.statusBar().showMessage(f"Freed {human_bytes(size)}", 5000)
+            self.notify(f"Freed {human_bytes(size)}", ms=4000)
 
     # Closing --------------------------------------------------------------------------------
 

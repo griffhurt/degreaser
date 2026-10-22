@@ -30,6 +30,9 @@ def run(argv: list[str]) -> int:
         # Windowed Windows builds have no stdout, so CI reads the report from a file.
         help="with --smoke-test, also write the JSON report to this file",
     )
+    parser.add_argument(
+        "--theme", choices=["system", "light", "dark"], default="system", help="colour theme"
+    )
     args, qt_args = parser.parse_known_args(argv[1:])
 
     # Qt also ships a native macOS backend, but it can't play AVI/MKV/WMV and delivers no
@@ -41,6 +44,10 @@ def run(argv: list[str]) -> int:
     app = QApplication([argv[0], *qt_args])
     app.setApplicationName("Degreaser")
     app.setApplicationVersion(__version__)
+
+    from degreaser.ui.theme import theme
+
+    theme().install(app, dark={"system": None, "light": False, "dark": True}[args.theme])
 
     from degreaser.core.preview.cache import wipe_all_project_caches
     from degreaser.ui.preview.ffmpeg_log import set_ffmpeg_log_level

@@ -7,6 +7,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPersistentModelInd
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -23,6 +24,7 @@ from degreaser.core.categories import format_category
 from degreaser.core.model import EffectiveState
 from degreaser.core.triage.session import TriageSession
 from degreaser.ui.format import human_bytes, human_count
+from degreaser.ui.theme import icon, theme
 from degreaser.ui.widgets.icons import STATE_LABELS, state_icon
 
 ROW_LIMIT = 100_000
@@ -158,6 +160,38 @@ class ReviewModel(QAbstractTableModel):
         return None
 
 
+class StatChip(QFrame):
+    """A pill with a coloured dot, a value and a caption."""
+
+    def __init__(self, caption: str, tone: str) -> None:
+        super().__init__()
+        self.setProperty("role", "pill")
+        self.tone = tone
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 5, 14, 5)
+        layout.setSpacing(8)
+        self.dot = QLabel()
+        self.value = QLabel("—")
+        self.value.setStyleSheet("font-weight: 600;")
+        self.caption = QLabel(caption)
+        self.caption.setProperty("role", "muted")
+        for w in (self.dot, self.value, self.caption):
+            layout.addWidget(w)
+        theme().changed.connect(lambda _t: self._paint_dot())
+        self._paint_dot()
+
+    def _paint_dot(self) -> None:
+        t = theme().tokens
+        color = {"danger": t.danger, "accent": t.accent, "warning": t.warning}.get(
+            self.tone, t.text_faint
+        )
+        self.dot.setFixedSize(8, 8)
+        self.dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
+
+    def set_value(self, value: str) -> None:
+        self.value.setText(value)
+
+
 class ReviewWindow(QMainWindow):
     changed = Signal()
     commit_requested = Signal()
@@ -166,23 +200,59 @@ class ReviewWindow(QMainWindow):
         super().__init__()
         self.session = session
         self.setWindowTitle(f"Review — {project_name}")
-        self.resize(1100, 700)
+        self.resize(1120, 720)
+        t = theme().tokens
 
         central = QWidget()
+        central.setObjectName("central")
         layout = QVBoxLayout(central)
+        layout.setContentsMargins(24, 20, 24, 18)
+        layout.setSpacing(14)
+
+        header = QHBoxLayout()
+        title = QLabel("Review")
+        title.setProperty("role", "title")
+        header.addWidget(title)
+        header.addSpacing(12)
+        self.chip_delete = StatChip("to delete", "danger")
+        self.chip_categorised = StatChip("categorised", "accent")
+        self.chip_skipped = StatChip("skipped", "warning")
+        self.chip_untriaged = StatChip("untriaged", "neutral")
+        for chip in (
+            self.chip_delete,
+            self.chip_categorised,
+            self.chip_skipped,
+            self.chip_untriaged,
+        ):
+            header.addWidget(chip)
+        header.addStretch()
+        self.updating = QLabel()
+        self.updating.setProperty("role", "faint")
+        header.addWidget(self.updating)
+        layout.addLayout(header)
+        # Kept for tests and callers that read the totals as one line of text.
         self.totals = QLabel()
-        layout.addWidget(self.totals)
+        self.totals.hide()
 
         filters = QHBoxLayout()
+        filters.setSpacing(8)
         self.filter_box = QComboBox()
+        self.filter_box.setMinimumWidth(190)
         for filter_id, (label, _) in FILTERS.items():
             self.filter_box.addItem(label, filter_id)
         self.path_filter = QLineEdit()
-        self.path_filter.setPlaceholderText("Path contains…")
+        self.path_filter.setPlaceholderText("Filter by path…")
+        self.path_filter.addAction(
+            icon("search", t.text_faint, 15), QLineEdit.ActionPosition.LeadingPosition
+        )
         self.category_filter = QLineEdit()
-        self.category_filter.setPlaceholderText("Category starts with… (e.g. Videos › High School)")
-        for w in (self.filter_box, self.path_filter, self.category_filter):
-            filters.addWidget(w)
+        self.category_filter.setPlaceholderText("Category starts with… (e.g. Videos, High School)")
+        self.category_filter.addAction(
+            icon("tag", t.text_faint, 15), QLineEdit.ActionPosition.LeadingPosition
+        )
+        filters.addWidget(self.filter_box)
+        filters.addWidget(self.path_filter, 1)
+        filters.addWidget(self.category_filter, 1)
         self.filter_box.currentIndexChanged.connect(self.reload)
         self.path_filter.returnPressed.connect(self.reload)
         self.category_filter.returnPressed.connect(self.reload)
@@ -192,26 +262,41 @@ class ReviewWindow(QMainWindow):
         self.table = QTableView()
         self.table.setModel(self.model)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().hide()
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.verticalHeader().setDefaultSectionSize(32)
+        header_view = self.table.horizontalHeader()
+        header_view.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        header_view.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column, width in ((1, 120), (2, 150), (3, 200), (4, 90), (5, 140)):
+            header_view.resizeSection(column, width)
         layout.addWidget(self.table, 1)
-        self.count_label = QLabel()
-        layout.addWidget(self.count_label)
 
-        buttons = QHBoxLayout()
-        for text, action in (("Keep", "keep"), ("Delete", "delete"), ("Skip", "skip")):
+        footer = QHBoxLayout()
+        footer.setSpacing(8)
+        self.count_label = QLabel()
+        self.count_label.setProperty("role", "muted")
+        footer.addWidget(self.count_label)
+        footer.addSpacing(12)
+        for text, action, icon_name, color in (
+            ("Keep", "keep", "check", t.success),
+            ("Delete", "delete", "trash-2", t.danger),
+            ("Skip", "skip", "skip-forward", t.warning),
+            ("Clear", None, "x", t.text_muted),
+        ):
             button = QPushButton(text)
+            button.setIcon(icon(icon_name, color, 15))
+            button.setToolTip("Apply to the selected rows")
             button.clicked.connect(lambda _=False, a=action: self.apply(a))
-            buttons.addWidget(button)
-        clear = QPushButton("Clear Decision")
-        clear.clicked.connect(lambda: self.apply(None))
-        buttons.addWidget(clear)
-        buttons.addStretch()
+            footer.addWidget(button)
+        footer.addStretch()
         commit = QPushButton("Commit…")
-        commit.setDefault(True)
+        commit.setProperty("variant", "primary")
+        commit.setIcon(icon("git-commit-horizontal", t.accent_text, 16))
         commit.clicked.connect(self.commit_requested.emit)
-        buttons.addWidget(commit)
-        layout.addLayout(buttons)
+        footer.addWidget(commit)
+        layout.addLayout(footer)
         self.setCentralWidget(central)
 
         self.reload()
@@ -234,15 +319,22 @@ class ReviewWindow(QMainWindow):
     def update_totals(self) -> None:
         summary = self.session.tracker.summary
         if summary is None:
+            self.updating.setText("Counting…")
             self.totals.setText("Counting…")
             return
-        stale = " (updating…)" if self.session.tracker.stale else ""
+        self.updating.setText("Updating…" if self.session.tracker.stale else "")
+        files = summary.files_delete
+        plural = "" if files == 1 else "s"
+        size = human_bytes(summary.bytes_delete)
+        self.chip_delete.set_value(f"{human_count(files)} file{plural} · {size}")
+        self.chip_categorised.set_value(human_count(summary.files_categorised))
+        self.chip_skipped.set_value(human_count(summary.files_skip))
+        self.chip_untriaged.set_value(human_count(summary.files_untriaged))
         self.totals.setText(
-            f"<b>{human_count(summary.files_delete)}</b> files to delete"
-            f" (<b>{human_bytes(summary.bytes_delete)}</b>) · "
-            f"<b>{human_count(summary.files_categorised)}</b> categorised · "
+            f"{human_count(files)} files to delete ({human_bytes(summary.bytes_delete)}) · "
+            f"{human_count(summary.files_categorised)} categorised · "
             f"{human_count(summary.files_skip)} skipped · "
-            f"{human_count(summary.files_untriaged)} untriaged{stale}"
+            f"{human_count(summary.files_untriaged)} untriaged"
         )
 
     def selected_paths(self) -> list[str]:

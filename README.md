@@ -29,3 +29,7 @@ See [docs/architecture.md](docs/architecture.md) for details.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+Bundled third-party assets:
+- [Inter](https://rsms.me/inter/) font, by Rasmus Andersson, under the SIL Open Font License; see `src/degreaser/ui/assets/fonts/OFL-Inter.txt`.
+- [Lucide](https://lucide.dev) icons, under the ISC licence; see `src/degreaser/ui/assets/icons/LICENSE-lucide.txt`.

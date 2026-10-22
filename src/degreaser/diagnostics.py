@@ -33,6 +33,19 @@ def collect() -> dict[str, Any]:
         report["errors"].append(f"QtMultimedia: {exc!r}")
 
     try:
+        from PySide6.QtGui import QFontDatabase
+
+        from degreaser.ui.theme.icons import pixmap
+        from degreaser.ui.theme.manager import load_fonts
+
+        if not load_fonts() or "Inter" not in QFontDatabase.families():
+            report["errors"].append("theme: Inter font failed to load")
+        if pixmap("check", "#000000", 16).isNull():
+            report["errors"].append("theme: icons failed to render")
+    except Exception as exc:
+        report["errors"].append(f"theme: {exc!r}")
+
+    try:
         from degreaser.ui.preview.ffmpeg_log import set_ffmpeg_log_level
 
         # Not an error if False: only FFmpeg's stderr noise comes back.

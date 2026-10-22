@@ -150,6 +150,9 @@ class ProjectEditDialog(QDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
+        save = buttons.button(QDialogButtonBox.StandardButton.Save)
+        if save is not None:
+            save.setProperty("variant", "primary")
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)

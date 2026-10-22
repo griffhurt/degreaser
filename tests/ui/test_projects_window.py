@@ -16,11 +16,10 @@ def test_lists_projects_and_opens(qtbot: QtBot, tmp_path: Path) -> None:
 
     window = ProjectsWindow()
     qtbot.addWidget(window)
-    cells = [window.table.item(0, c) for c in range(window.table.columnCount())]
-    texts = [c.text() if c else None for c in cells]
-    assert window.table.rowCount() == 1
-    assert texts[0] == "Old laptop"
-    assert texts[2:4] == ["25%", "3.0 GB"]
+    [card] = window.cards
+    assert card.name_label.text() == "Old laptop"
+    assert card.progress_label.text() == "25% triaged"
+    assert card.delete_label.text() == "3.0 GB to delete"
 
     with qtbot.waitSignal(window.open_requested) as blocker:
         window.open_button.click()

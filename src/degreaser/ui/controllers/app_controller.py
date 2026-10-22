@@ -132,7 +132,7 @@ class AppController(QObject):
             message = rescan_message(rescan)
             if rescan.status == "cancelled":
                 message = "Change check skipped"
-            window.statusBar().showMessage(message, 10_000)
+            window.notify(message, ms=5000)
         self.projects_window.hide()
 
     def _triage_closed(self, project: Project) -> None:

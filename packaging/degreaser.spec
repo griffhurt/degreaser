@@ -4,7 +4,7 @@
 # Onedir keeps Qt/FFmpeg as separate replaceable libraries (LGPL compliance, see docs/architecture.md §9).
 import sys
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 from degreaser import __version__
 
@@ -16,6 +16,7 @@ hiddenimports = [
     "PySide6.QtMultimediaWidgets",
     "PySide6.QtPdf",
     "PySide6.QtPdfWidgets",
+    "PySide6.QtSvg",
     *collect_submodules("smbclient"),
     *collect_submodules("keyring.backends"),
 ]
@@ -44,9 +45,13 @@ excludes = [
     "tkinter",
 ]
 
+# Fonts (Inter, OFL) and icons (Lucide, ISC), with their licence files.
+datas = collect_data_files("degreaser.ui.assets")
+
 a = Analysis(
     ["entry.py"],
     pathex=[],
+    datas=datas,
     hiddenimports=hiddenimports,
     excludes=excludes,
     noarchive=False,

@@ -6,9 +6,10 @@ Tab/Shift+Tab to the completer and validates with parse_category before submitti
 
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QColor, QKeyEvent, QPainter, QPaintEvent
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from degreaser.core.categories import Completer, format_category, input_text, parse_category
+from degreaser.ui.theme import pixmap, theme
 
 
 class _GhostLineEdit(QLineEdit):
@@ -37,29 +38,37 @@ class _GhostLineEdit(QLineEdit):
         painter.end()
 
 
-class CategoryInput(QWidget):
+class CategoryInput(QFrame):
     submitted = Signal(list)  # list[str]: the category's tags, possibly empty
     cancelled = Signal()
+    opened = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._completer: Completer | None = None
+        self.setProperty("role", "card")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
         row = QHBoxLayout()
+        row.setSpacing(10)
+        self.icon = QLabel()
         self.title = QLabel()
         self.inherited = QLabel()
-        self.inherited.setEnabled(False)
+        self.inherited.setProperty("role", "faint")
         self.edit = _GhostLineEdit()
-        self.edit.setPlaceholderText(
-            "Broad, …, specific — Tab completes, Enter applies, Esc cancels"
-        )
+        self.edit.setProperty("variant", "command")
+        self.edit.setPlaceholderText("Broad, …, specific")
+        row.addWidget(self.icon)
         row.addWidget(self.title)
         row.addWidget(self.inherited)
         row.addWidget(self.edit, 1)
         layout.addLayout(row)
+        hint = QLabel("Tab completes  ·  , adds a level  ·  Enter applies  ·  Esc cancels")
+        hint.setProperty("role", "faint")
+        layout.addWidget(hint)
         self.issues = QLabel()
-        self.issues.setStyleSheet("color: #d93025;")
+        self.issues.setProperty("role", "error")
         self.issues.hide()
         layout.addWidget(self.issues)
         self.edit.textEdited.connect(self._on_edited)
@@ -76,6 +85,7 @@ class CategoryInput(QWidget):
         self._completer = completer
         completer.reset()
         self.title.setText(f"<b>{title}</b>")
+        self.icon.setPixmap(pixmap("tag", theme().tokens.accent, 18))
         self.inherited.setText(
             f"inherited: {format_category(tuple(inherited))}  " if inherited else ""
         )
@@ -84,6 +94,7 @@ class CategoryInput(QWidget):
         self.edit.setText(text + (", " if text else ""))
         self._refresh()
         self.show()
+        self.opened.emit()
         self.edit.setFocus()
         self.edit.end(False)
 

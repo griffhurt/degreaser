@@ -53,6 +53,8 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 [tool.ruff.lint.per-file-ignores]
 # SQL DDL reads better unwrapped.
 "src/degreaser/core/db/schema.py" = ["E501"]
+# Generated stylesheet: CSS rules read better unwrapped.
+"src/degreaser/ui/theme/qss.py" = ["E501"]
 
 [tool.pyright]
 include = ["src", "tests"]

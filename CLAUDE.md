@@ -12,6 +12,12 @@ Read [README.md](README.md) and the docs in `docs/` before changing behaviour. `
 - Every commit op must be idempotent and must re-verify size/mtime before deleting.
 - The app is MIT-licensed. Don't add GPL or AGPL dependencies. LGPL and MPL are fine when shipped as separate libraries.
 
+## UI styling
+
+- Never hard-code colours, fonts or radii in widgets. Use `theme().tokens` and the stylesheet's `variant`/`role` properties (docs/architecture.md §7).
+- Icons come from `ui/assets/icons` (Lucide). To add one, fetch it from `lucide-static` at the same version and keep the licence file.
+- Check visual changes by rendering windows offscreen (`QWidget.grab().save(...)`) in both `--theme light` and `--theme dark`.
+
 ## Commands
 
 ```sh
