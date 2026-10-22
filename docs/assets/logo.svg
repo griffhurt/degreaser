@@ -14,42 +14,42 @@
   <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
 
   <!-- Artwork, centred optically on the tile -->
-  <g transform="translate(-22 -16)">
+  <g transform="translate(-28 -12)">
+    <!-- Spray mist, starting a clear gap past the nozzle tip (x=356) -->
+    <g stroke="#ffffff" stroke-width="14" stroke-linecap="round" fill="none">
+      <line x1="378" y1="126" x2="402" y2="110"/>
+      <line x1="384" y1="152" x2="414" y2="152"/>
+      <line x1="378" y1="178" x2="402" y2="194"/>
+    </g>
+    <g fill="#ffffff" fill-opacity="0.75">
+      <circle cx="430" cy="94" r="9"/>
+      <circle cx="444" cy="152" r="9"/>
+      <circle cx="430" cy="210" r="9"/>
+    </g>
 
-  <!-- Spray mist fanning out of the nozzle -->
-  <g stroke="#ffffff" stroke-width="14" stroke-linecap="round" fill="none">
-    <line x1="352" y1="128" x2="382" y2="108"/>
-    <line x1="358" y1="152" x2="394" y2="152"/>
-    <line x1="352" y1="176" x2="382" y2="196"/>
-  </g>
-  <g fill="#ffffff" fill-opacity="0.75">
-    <circle cx="410" cy="92" r="9"/>
-    <circle cx="424" cy="152" r="9"/>
-    <circle cx="410" cy="212" r="9"/>
-  </g>
+    <!-- Trigger: hangs from the front of the head, clear of the bottle (body ends at x=296) -->
+    <path d="M292 184 L 316 166 C 336 196, 338 228, 328 250 C 323 260, 310 258, 312 247
+             C 318 228, 316 208, 296 198 Z"
+          fill="#ffffff"/>
+    <!-- Sprayer head with nozzle; flat underside at y=188 from x=178 to x=294 -->
+    <path d="M150 128 C 150 112, 162 100, 178 100 L 292 100 C 316 100, 330 116, 336 132 L 344 132
+             C 352 132, 356 138, 356 146 L 356 158 C 356 166, 352 172, 344 172 L 320 172
+             C 316 182, 306 188, 294 188 L 178 188 C 162 188, 150 176, 150 160 Z"
+          fill="#ffffff"/>
+    <!-- Neck: from the head's underside (y=188) to the bottle's top (y=226) -->
+    <rect x="182" y="188" width="74" height="38" fill="#e9e9fc"/>
+    <!-- Bottle body -->
+    <path d="M168 226 L 252 226 C 278 226, 296 246, 296 272 L 296 420 C 296 440, 280 456, 260 456
+             L 156 456 C 136 456, 120 440, 120 420 L 120 276 C 120 248, 140 226, 168 226 Z"
+          fill="url(#white)"/>
+    <!-- Label with a check mark -->
+    <rect x="146" y="300" width="124" height="104" rx="18" fill="#5b5bd6" fill-opacity="0.22"/>
+    <path d="M174 352 L 198 376 L 244 330" fill="none" stroke="#5b5bd6" stroke-width="16"
+          stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.85"/>
 
-  <!-- Trigger -->
-  <path d="M262 176 L300 176 C 312 210, 312 238, 296 266 C 290 276, 276 274, 278 262 C 288 236, 284 210, 262 190 Z"
-        fill="#ffffff"/>
-  <!-- Sprayer head with nozzle -->
-  <path d="M150 128 C 150 112, 162 100, 178 100 L 292 100 C 316 100, 330 116, 336 132 L 344 132
-           C 352 132, 356 138, 356 146 L 356 158 C 356 166, 352 172, 344 172 L 320 172
-           C 316 182, 306 188, 294 188 L 178 188 C 162 188, 150 176, 150 160 Z"
-        fill="#ffffff"/>
-  <!-- Neck -->
-  <rect x="176" y="182" width="84" height="44" rx="8" fill="#e9e9fc"/>
-  <!-- Bottle body -->
-  <path d="M168 226 L 268 226 C 296 226, 316 248, 316 276 L 316 420 C 316 440, 300 456, 280 456
-           L 156 456 C 136 456, 120 440, 120 420 L 120 276 C 120 248, 140 226, 168 226 Z"
-        fill="url(#white)"/>
-  <!-- Label -->
-  <rect x="150" y="300" width="136" height="104" rx="18" fill="#5b5bd6" fill-opacity="0.22"/>
-  <path d="M182 352 L 206 376 L 254 328" fill="none" stroke="#5b5bd6" stroke-width="16"
-        stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.85"/>
-
-  <!-- Sparkle: freshly cleaned -->
-  <path d="M398 300 C 403 328, 410 335, 438 340 C 410 345, 403 352, 398 380
-           C 393 352, 386 345, 358 340 C 386 335, 393 328, 398 300 Z"
-        fill="#ffffff"/>
+    <!-- Sparkle: freshly cleaned -->
+    <path d="M398 300 C 403 328, 410 335, 438 340 C 410 345, 403 352, 398 380
+             C 393 352, 386 345, 358 340 C 386 335, 393 328, 398 300 Z"
+          fill="#ffffff"/>
   </g>
 </svg>
