@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -39,8 +40,10 @@ class ProjectsWindow(QMainWindow):
 
         central = QWidget()
         layout = QVBoxLayout(central)
-        title = QLabel("<h2>Projects</h2>")
-        layout.addWidget(title)
+        self.title_label = QLabel("<h2>Projects</h2>")
+        # Never grow vertically: a taller label centres its text and the header drifts down.
+        self.title_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self.title_label)
 
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
@@ -56,7 +59,8 @@ class ProjectsWindow(QMainWindow):
 
         self.empty_label = QLabel("No projects yet. Create one to start triaging a folder.")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.empty_label)
+        # Takes the table's space when there are no projects, so the header stays at the top.
+        layout.addWidget(self.empty_label, 1)
 
         buttons = QHBoxLayout()
         self.new_button = QPushButton("New Project…")

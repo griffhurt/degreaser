@@ -73,3 +73,14 @@ def test_replace_rules_round_trip(tmp_path: Path) -> None:
     project.replace_rules(["node_modules/"], ["*.psd", "Photos/"])
     assert project.rules() == (["node_modules/"], ["*.psd", "Photos/"])
     project.close()
+
+
+def test_empty_state_keeps_header_at_top(qtbot: QtBot) -> None:
+    window = ProjectsWindow()
+    qtbot.addWidget(window)
+    window.resize(900, 600)
+    window.show()
+    qtbot.waitExposed(window)
+    title = window.title_label
+    assert title.y() < 40
+    assert title.height() <= title.sizeHint().height() + 2  # text isn't centred in a tall box

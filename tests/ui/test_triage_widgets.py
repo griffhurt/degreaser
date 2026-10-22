@@ -28,17 +28,30 @@ def test_path_bar_segments_and_menu(qtbot: QtBot) -> None:
 
     menu = bar.build_menu("Backups/Laptop")
     texts = [a.text() for a in menu.actions() if not a.isSeparator()]
-    assert texts[0] == "Delete this folder (Laptop)"
-    assert texts[1] == "Tag this folder…"
-    assert texts[2].startswith("a.txt") and texts[4].startswith("sub/")
+    assert texts[:3] == [
+        "Keep this folder (Laptop)",
+        "Delete this folder (Laptop)",
+        "Tag this folder…",
+    ]
+    assert texts[3].startswith("a.txt") and texts[5].startswith("sub/")
     assert texts[-1] == "… 1,200 more"
 
     with qtbot.waitSignal(bar.jump_requested) as jump:
         next(a for a in menu.actions() if a.text().startswith("b.txt")).trigger()
     assert jump.args == ["Backups/Laptop/b.txt"]
-    with qtbot.waitSignal(bar.delete_folder_requested) as delete:
+    with qtbot.waitSignal(bar.keep_folder_requested) as keep:
         menu.actions()[0].trigger()
+    assert keep.args == ["Backups/Laptop"]
+    with qtbot.waitSignal(bar.delete_folder_requested) as delete:
+        menu.actions()[1].trigger()
     assert delete.args == ["Backups/Laptop"]
+
+
+def test_root_folder_actions_disabled(qtbot: QtBot) -> None:
+    bar = PathBar()
+    qtbot.addWidget(bar)
+    menu = bar.build_menu("")
+    assert [a.isEnabled() for a in menu.actions()[:3]] == [False, False, False]
 
 
 def test_root_level_file(qtbot: QtBot) -> None:

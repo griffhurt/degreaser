@@ -12,6 +12,7 @@ from degreaser.core import paths
 DEFAULT_KEYMAP: dict[str, str] = {
     "keep": "K",
     "delete": "D",
+    "keep_folder": "Shift+K",
     "delete_folder": "Shift+D",
     "tag": "T",
     "tag_folder": "Shift+T",

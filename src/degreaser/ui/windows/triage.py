@@ -100,6 +100,7 @@ class TriageWindow(QMainWindow):
         self.path_bar = PathBar()
         self.path_bar.set_children_provider(self.folder_listing)
         self.path_bar.jump_requested.connect(self.jump_to)
+        self.path_bar.keep_folder_requested.connect(self.keep_folder)
         self.path_bar.delete_folder_requested.connect(self.delete_folder)
         self.path_bar.tag_folder_requested.connect(self.tag_folder)
         layout.addWidget(self.path_bar)
@@ -193,7 +194,16 @@ class TriageWindow(QMainWindow):
 
     def _build_shortcuts(self) -> None:
         self.shortcuts: dict[str, QShortcut] = {}
-        for action in ("keep", "delete", "delete_folder", "tag", "tag_folder", "skip", "open"):
+        for action in (
+            "keep",
+            "delete",
+            "keep_folder",
+            "delete_folder",
+            "tag",
+            "tag_folder",
+            "skip",
+            "open",
+        ):
             self._shortcut(action, lambda a=action: self.trigger(a))
         self._shortcut("expand_preview", self.expand_preview)
         # Undo/redo also live on the Edit menu actions; shortcuts keep them working everywhere.
@@ -338,6 +348,8 @@ class TriageWindow(QMainWindow):
                 self._begin_tag(None)
             case "tag_folder":
                 self.tag_folder(self.session.default_folder())
+            case "keep_folder":
+                self.keep_folder(self.session.default_folder())
             case "delete_folder":
                 self.delete_folder(self.session.default_folder())
             case "open":
@@ -394,12 +406,23 @@ class TriageWindow(QMainWindow):
         inherited = category if state.category_from not in (None, item.path) else None
         self.category_input.begin(Completer(self.session.index), "Tag:", category, inherited)
 
+    def keep_folder(self, folder: str) -> None:
+        """Keep everything in a folder (a tag-folder that leaves its category as it is)."""
+        if self.session.current is None or folder == "":
+            return
+        state = self.session.state_of(folder)
+        own = list(state.category) if state.category and state.category_from == folder else []
+        self._tag_folder_with(folder, own)
+
     def _category_submitted(self, tags: list[str]) -> None:
         folder = self._pending_tag_folder
         self._pending_tag_folder = None
         if folder is None:
             self._apply(self.session.tag(tags))
             return
+        self._tag_folder_with(folder, tags)
+
+    def _tag_folder_with(self, folder: str, tags: list[str]) -> None:
         check = self.session.check_tag_folder(tags, folder)
         if check.blocked_by is not None:
             blocked = check.blocked_by or self.project.name

@@ -9,6 +9,7 @@ from degreaser.ui.keymap import ACTIONS, Keymap
 BAR_ACTIONS = [
     "keep",
     "delete",
+    "keep_folder",
     "delete_folder",
     "tag",
     "tag_folder",

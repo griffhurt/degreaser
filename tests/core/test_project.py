@@ -40,3 +40,27 @@ def test_create_open_list_remove(tmp_path: Path) -> None:
     remove_project(p.uuid)
     assert list_projects() == []
     assert files.exists()
+
+
+def test_main_connection_is_guarded_against_other_threads(tmp_path: Path) -> None:
+    import threading
+
+    from degreaser.core.project import WrongThread
+
+    p = Project.create("P", {"type": "local", "path": str(tmp_path)})
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            _ = p.settings
+        except BaseException as exc:
+            errors.append(exc)
+        conn = p.new_connection()  # the supported way
+        conn.execute("SELECT 1")
+        conn.close()
+
+    t = threading.Thread(target=worker)
+    t.start()
+    t.join()
+    assert len(errors) == 1 and isinstance(errors[0], WrongThread)
+    p.close()

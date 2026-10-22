@@ -4,6 +4,7 @@ import json
 import shutil
 import sqlite3
 import sys
+import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass, fields
@@ -122,13 +123,28 @@ class ProjectInUse(Exception):
     pass
 
 
+class WrongThread(RuntimeError):
+    pass
+
+
 class Project:
     """An open project. `conn` belongs to the thread that opened it (the UI thread)."""
 
     def __init__(self, project_uuid: str, conn: sqlite3.Connection, lock: ProjectLock) -> None:
         self.uuid = project_uuid
-        self.conn = conn
+        self._conn = conn
         self._lock = lock
+        self._thread = threading.get_ident()
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """The owning thread's connection. Workers must use new_connection() instead."""
+        if threading.get_ident() != self._thread:
+            raise WrongThread(
+                "Project.conn (and meta/settings/name/rules) used off the thread that opened "
+                "the project; read what the worker needs first, or use new_connection()"
+            )
+        return self._conn
 
     # Lifecycle ---------------------------------------------------------------------------
 

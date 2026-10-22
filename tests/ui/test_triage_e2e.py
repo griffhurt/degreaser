@@ -225,3 +225,17 @@ def test_action_bar_buttons_have_no_focus_and_dropdown_lists_children(
     )
     window.close()
     project.close()
+
+
+def test_keep_folder_keeps_rest_and_moves_on(qtbot: QtBot, tree: Path) -> None:
+    project, window = open_window(qtbot, tree)
+    window.jump_to("junk/x.tmp")
+    window.session.tag(["Keepers"])  # an own category on a file inside
+    window.jump_to("junk/x.tmp")
+    press(qtbot, window, Qt.Key.Key_K, Qt.KeyboardModifier.ShiftModifier)
+    assert window.session.state_of("junk/y.tmp").action is Effective.KEEP
+    assert window.session.state_of("junk/x.tmp").category == ("Keepers",)
+    # Traversal continues after the folder: nothing else is left in this tree but the root files.
+    assert current(window) != "junk/y.tmp"
+    window.close()
+    project.close()

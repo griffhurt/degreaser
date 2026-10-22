@@ -82,6 +82,8 @@ class AppController(QObject):
     def _rescan_then_open(self, project: Project) -> None:
         cancel = CancelToken()
         source = project.make_source()
+        # Read on this (UI) thread: project.settings uses the UI thread's connection.
+        retriage_changed = project.settings.retriage_changed
         dialog = ProgressDialog(
             "Checking for changes",
             f"Checking “{project.name}” for files added, removed or changed since last time…",
@@ -94,7 +96,7 @@ class AppController(QObject):
             return Rescanner(
                 project.new_connection,
                 source,
-                retriage_changed=project.settings.retriage_changed,
+                retriage_changed=retriage_changed,
                 on_progress=progress,
             ).run(cancel)
 

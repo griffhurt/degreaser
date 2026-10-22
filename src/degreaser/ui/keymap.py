@@ -18,6 +18,7 @@ class ActionInfo:
 ACTIONS: list[ActionInfo] = [
     ActionInfo("keep", "Keep"),
     ActionInfo("delete", "Delete"),
+    ActionInfo("keep_folder", "Keep folder"),
     ActionInfo("delete_folder", "Delete folder"),
     ActionInfo("tag", "Tag"),
     ActionInfo("tag_folder", "Tag folder"),

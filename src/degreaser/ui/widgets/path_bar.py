@@ -54,6 +54,7 @@ class _Segment(QToolButton):
 
 class PathBar(QWidget):
     jump_requested = Signal(str)  # file path
+    keep_folder_requested = Signal(str)  # folder path
     delete_folder_requested = Signal(str)  # folder path
     tag_folder_requested = Signal(str)  # folder path
 
@@ -135,14 +136,16 @@ class PathBar(QWidget):
     def build_menu(self, folder: str) -> QMenu:
         menu = QMenu(self)
         title = basename(folder) or "project root"
+        keep = menu.addAction(f"Keep this folder ({title})")
+        keep.triggered.connect(lambda: self.keep_folder_requested.emit(folder))
         delete = menu.addAction(f"Delete this folder ({title})")
         delete.triggered.connect(lambda: self.delete_folder_requested.emit(folder))
         tag = menu.addAction("Tag this folder…")
         tag.triggered.connect(lambda: self.tag_folder_requested.emit(folder))
         if folder == "":
             # Folder actions never apply to the project root.
-            delete.setEnabled(False)
-            tag.setEnabled(False)
+            for action in (keep, delete, tag):
+                action.setEnabled(False)
         menu.addSeparator()
         if self._provider is None:
             return menu
