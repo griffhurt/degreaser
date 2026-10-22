@@ -1,0 +1,29 @@
+# Samba server for SMB integration tests and benchmarks.
+#   docker compose -f tests/integration/docker-compose.yml up -d --build
+# Change latency at runtime:
+#   tests/integration/samba/set-latency.sh 5     # ms added to RTT; 0 removes it
+services:
+  samba:
+    build: ./samba
+    container_name: degreaser-samba
+    ports:
+      - "127.0.0.1:1445:445"
+    cap_add:
+      - NET_ADMIN
+    environment:
+      SMB_USER: degreaser
+      SMB_PASS: degreaser
+      LATENCY_MS: "0"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "445"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    volumes:
+      - samba-data:/srv/data
+      - samba-bench:/srv/bench
+      - ./samba/fixtures:/fixtures:ro
+
+volumes:
+  samba-data:
+  samba-bench:

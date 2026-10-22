@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_QPA_PLATFORM: offscreen
+  # System libraries PySide6 needs on a bare Ubuntu runner (offscreen platform + multimedia).
+  LINUX_QT_DEPS: >-
+    libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libdbus-1-3
+    libglib2.0-0 libxcb-cursor0 libpulse0 libasound2t64
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv sync --locked --group dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pyright
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y $LINUX_QT_DEPS
+      - run: uv sync --locked --group dev
+      # SMB tests skip themselves here; they run in the smb-integration job.
+      - run: uv run pytest -q -m "not smb"
+
+  smb-integration:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: sudo apt-get update && sudo apt-get install -y $LINUX_QT_DEPS
+      - run: docker compose -f tests/integration/docker-compose.yml up -d --build --wait
+      - run: uv sync --locked --group dev
+      - run: uv run pytest -q -m smb
+      - if: failure()
+        run: docker logs degreaser-samba
+
+  package:
+    needs: [lint, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            smoke: QT_QPA_PLATFORM=offscreen dist/Degreaser.app/Contents/MacOS/Degreaser --smoke-test --report-file smoke.json
+          - os: ubuntu-24.04
+            smoke: dist/Degreaser/degreaser --smoke-test --report-file smoke.json
+          - os: windows-2025
+            smoke: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y $LINUX_QT_DEPS
+      - run: uv sync --locked --group build
+      - run: uv run pyinstaller packaging/degreaser.spec --noconfirm
+      - name: Smoke test packaged app (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: ${{ matrix.smoke }}
+      - name: Smoke test packaged app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Windowed exe: PowerShell doesn't wait for it unless we use Start-Process -Wait.
+          $p = Start-Process -FilePath dist\Degreaser\Degreaser.exe `
+                -ArgumentList '--smoke-test','--report-file','smoke.json' -Wait -PassThru
+          Get-Content smoke.json
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: degreaser-${{ runner.os }}
+          path: dist/
+          retention-days: 7

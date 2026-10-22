@@ -19,7 +19,7 @@ Degreaser is a cross-platform desktop app (macOS, Windows and Linux) for working
 
 ## Tech stack (summary)
 
-- Python 3.13 and PySide6 (Qt 6) for the UI. Qt Multimedia's FFmpeg backend handles audio and video.
+- Python 3.14 and PySide6 6.12 (Qt 6) for the UI. Qt Multimedia's FFmpeg backend handles audio and video.
 - SMB2/3 through `smbprotocol`, behind a pluggable `FileSource` interface (Local and SMB now, WebDAV later).
 - One SQLite database per project.
 - PyInstaller builds for each OS, distributed outside the app stores.

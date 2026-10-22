@@ -1,0 +1,60 @@
+[project]
+name = "degreaser"
+version = "0.0.1"
+description = "Triage large file trees (local or SMB): keep, delete, categorise, then commit."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Griffin Hurt" }]
+requires-python = ">=3.14,<3.16"
+dependencies = [
+    "PySide6>=6.12",
+    "smbprotocol>=1.17",
+    "pathspec>=1.1",
+    "puremagic>=2.2",
+    "charset-normalizer>=3.5",
+    "keyring>=25.7",
+    "platformdirs>=4.13",
+    "pillow>=13.0",
+]
+
+[project.scripts]
+degreaser = "degreaser.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-qt>=4.5",
+    "ruff>=0.17",
+    "pyright>=1.1.414",
+    "pre-commit>=4",
+]
+build = [
+    "pyinstaller>=6.22",
+]
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+# Spikes are throwaway experiments; keep them out of lint and type checks.
+extend-exclude = ["spikes", "*.md"]
+# Apply excludes even when pre-commit passes file paths explicitly.
+force-exclude = true
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "smb: needs the Samba Docker container (tests/integration/docker-compose.yml)",
+]

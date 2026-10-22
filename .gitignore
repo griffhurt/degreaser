@@ -22,3 +22,10 @@ Thumbs.db
 
 # Local Claude Code settings
 .claude/settings.local.json
+
+# Spike outputs (generated media, benchmark DBs)
+spikes/**/media/
+spikes/**/out/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
