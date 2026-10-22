@@ -241,3 +241,19 @@ def test_keep_folder_keeps_rest_and_moves_on(qtbot: QtBot, tree: Path) -> None:
     assert current(window) != "junk/y.tmp"
     window.close()
     project.close()
+
+
+def test_undo_shortcut_works_without_opening_edit_menu(qtbot: QtBot, tree: Path) -> None:
+    # Regression: Undo started disabled (nothing to undo yet) and was only re-enabled when the
+    # Edit menu opened, so ⌘Z silently did nothing after the first actions of a session.
+    project, window = open_window(qtbot, tree)
+    assert not window.undo_action.isEnabled()
+    press(qtbot, window, Qt.Key.Key_K)
+    assert current(window) == "b.txt"
+    assert window.undo_action.isEnabled()
+    window.undo_action.trigger()  # what the ⌘Z / Ctrl+Z shortcut does
+    assert current(window) == "a.txt"
+    assert window.session.state_of("a.txt").action is Effective.UNTRIAGED
+    assert window.redo_action.isEnabled()
+    window.close()
+    project.close()

@@ -1,10 +1,10 @@
-"""Breadcrumb path bar with hover dropdowns per folder (docs/product-spec.md §4.1)."""
+"""Breadcrumb path bar; clicking a folder opens its dropdown (docs/product-spec.md §4.1)."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QEnterEvent, QIcon
+from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QToolButton, QWidget
 
 from degreaser.core.model import Effective, Origin
@@ -12,8 +12,6 @@ from degreaser.core.sources.base import basename, join
 from degreaser.ui.format import human_bytes
 from degreaser.ui.theme import icon, pixmap, theme
 from degreaser.ui.widgets.icons import STATE_LABELS, state_icon
-
-HOVER_DELAY_MS = 350
 
 _EXT_ICONS = {
     "file-image": {"jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp", "heic", "svg", "ico"},
@@ -91,16 +89,7 @@ ChildrenProvider = Callable[[str], FolderListing]
 
 
 class _Segment(QToolButton):
-    hovered = Signal()
-    unhovered = Signal()
-
-    def enterEvent(self, event: QEnterEvent) -> None:
-        self.hovered.emit()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event: object) -> None:
-        self.unhovered.emit()
-        super().leaveEvent(event)  # type: ignore[arg-type]
+    """A folder in the breadcrumb. Its dropdown opens on click only (hover was too twitchy)."""
 
 
 class PathBar(QWidget):
@@ -118,9 +107,6 @@ class PathBar(QWidget):
         self._path = ""
         self._root_label = "Project"
         theme().changed.connect(lambda _t: self.set_path(self._path, self._root_label))
-        self._hover_timer = QTimer(self, singleShot=True, interval=HOVER_DELAY_MS)
-        self._hover_timer.timeout.connect(self._open_hovered)
-        self._hovered: _Segment | None = None
         self._menu: QMenu | None = None
         self.segments: list[_Segment] = []
 
@@ -178,18 +164,8 @@ class PathBar(QWidget):
         segment.setProperty("folder", folder)
         segment.setToolTip(folder or "Project root")
         segment.clicked.connect(lambda _=False, s=segment: self.open_menu(s))
-        segment.hovered.connect(lambda s=segment: self._start_hover(s))
-        segment.unhovered.connect(self._hover_timer.stop)
         self.segments.append(segment)
         self._layout.addWidget(segment)
-
-    def _start_hover(self, segment: _Segment) -> None:
-        self._hovered = segment
-        self._hover_timer.start()
-
-    def _open_hovered(self) -> None:
-        if self._hovered is not None and self._hovered.underMouse():
-            self.open_menu(self._hovered)
 
     def open_menu(self, segment: _Segment) -> QMenu:
         if self._menu is not None:

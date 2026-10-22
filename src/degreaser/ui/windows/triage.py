@@ -317,6 +317,7 @@ class TriageWindow(QMainWindow):
         self._update_summary()
 
     def show_item(self, item: Item) -> None:
+        self._update_undo_labels()
         self.stack.setCurrentIndex(0)
         self.action_bar.set_enabled_actions(set(self.action_bar.buttons))
         self.path_bar.set_path(item.path, root_label=self.project.name)
@@ -597,6 +598,8 @@ class TriageWindow(QMainWindow):
         self.show_advance(self.session.redo())
 
     def _update_undo_labels(self) -> None:
+        if not hasattr(self, "undo_action"):
+            return  # still building the window; menus come after the body
         undo, redo = self.session.undo_label(), self.session.redo_label()
         self.undo_action.setText(f"Undo {undo}" if undo else "Undo")
         self.redo_action.setText(f"Redo {redo}" if redo else "Redo")
@@ -709,6 +712,9 @@ class TriageWindow(QMainWindow):
             QMessageBox.warning(self, "Something went wrong", f"{type(exc).__name__}: {exc}")
 
     def _update_summary(self) -> None:
+        # Every decision change ends here, so keep Undo/Redo enabled-ness current too: a
+        # disabled QAction ignores its shortcut (⌘Z did nothing until the Edit menu opened).
+        self._update_undo_labels()
         summary = self.session.tracker.summary
         if summary is None:
             self.summary_label.setText("Counting files…")
