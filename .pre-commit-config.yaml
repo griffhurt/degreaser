@@ -3,8 +3,11 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # Bundled third-party assets (fonts, icons, licence texts) must stay byte-for-byte.
       - id: trailing-whitespace
+        exclude: ^src/degreaser/ui/assets/
       - id: end-of-file-fixer
+        exclude: ^src/degreaser/ui/assets/
       - id: check-yaml
       - id: check-toml
       - id: check-added-large-files

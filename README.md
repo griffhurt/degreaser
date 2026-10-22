@@ -32,4 +32,5 @@ MIT. See [LICENSE](LICENSE).
 
 Bundled third-party assets:
 - [Inter](https://rsms.me/inter/) font, by Rasmus Andersson, under the SIL Open Font License; see `src/degreaser/ui/assets/fonts/OFL-Inter.txt`.
+- [JetBrains Mono](https://www.jetbrains.com/lp/mono/) font, under the SIL Open Font License; see `src/degreaser/ui/assets/fonts/OFL-JetBrainsMono.txt`.
 - [Lucide](https://lucide.dev) icons, under the ISC licence; see `src/degreaser/ui/assets/icons/LICENSE-lucide.txt`.

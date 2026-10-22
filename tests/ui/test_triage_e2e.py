@@ -91,6 +91,8 @@ def open_window(qtbot: QtBot, root: Path) -> tuple[Project, TriageWindow]:
     qtbot.addWidget(window)
     window.show()
     qtbot.waitUntil(lambda: window.session.current is not None, timeout=5000)
+    # Tests jump straight into subfolders, so the background index must be complete.
+    qtbot.waitUntil(lambda: not window._indexing, timeout=5000)
     return project, window
 
 

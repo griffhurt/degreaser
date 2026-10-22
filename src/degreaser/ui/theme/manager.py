@@ -10,7 +10,13 @@ from degreaser.core import paths
 from degreaser.ui.theme.qss import stylesheet
 from degreaser.ui.theme.tokens import DARK, LIGHT, Tokens
 
-FONT_FILES = ["Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf"]
+FONT_FILES = [
+    "Inter-Regular.ttf",
+    "Inter-Medium.ttf",
+    "Inter-SemiBold.ttf",
+    "Inter-Bold.ttf",
+    "JetBrainsMono-Regular.ttf",
+]
 
 
 def load_fonts() -> bool:
@@ -22,28 +28,15 @@ def load_fonts() -> bool:
     return ok
 
 
-# Preferred fixed-width fonts per platform, best first. Qt's FixedFont can come back as the
-# generic name "monospace", which doesn't resolve everywhere (it fell back to a
-# proportional font on macOS), so pick a concrete installed family.
-MONO_CANDIDATES = [
-    "SF Mono",
-    "Menlo",
-    "Cascadia Mono",
-    "Consolas",
-    "JetBrains Mono",
-    "DejaVu Sans Mono",
-    "Ubuntu Mono",
-    "Liberation Mono",
-    "Noto Sans Mono",
-    "Courier New",
-]
+# Text and hex previews use the bundled JetBrains Mono, so every platform gets the same,
+# guaranteed fixed-width font (system lookups returned the unresolvable generic "monospace"
+# on some platforms, which fell back to a proportional font).
+MONO_FAMILY = "JetBrains Mono"
 
 
 def mono_family() -> str:
-    installed = set(QFontDatabase.families())
-    for family in MONO_CANDIDATES:
-        if family in installed:
-            return family
+    if MONO_FAMILY in QFontDatabase.families():
+        return MONO_FAMILY
     return QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
 
 

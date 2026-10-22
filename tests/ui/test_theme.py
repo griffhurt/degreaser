@@ -45,6 +45,7 @@ def test_mono_family_is_really_fixed_pitch(qtbot: QtBot) -> None:
 
     from degreaser.ui.theme.manager import mono_family
 
+    assert load_fonts()
     family = mono_family()
-    assert family != "monospace"
+    assert family == "JetBrains Mono"
     assert QFontInfo(QFont(family)).fixedPitch()
