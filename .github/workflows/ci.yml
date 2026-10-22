@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.2
       - run: uv sync --locked --group dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .
@@ -36,7 +36,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.2
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y $LINUX_QT_DEPS
       - run: uv sync --locked --group dev
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.2
       - run: sudo apt-get update && sudo apt-get install -y $LINUX_QT_DEPS
       - run: docker compose -f tests/integration/docker-compose.yml up -d --build --wait
       - run: uv sync --locked --group dev
@@ -70,7 +70,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.2
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y $LINUX_QT_DEPS
       - run: uv sync --locked --group build
