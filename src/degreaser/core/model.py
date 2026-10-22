@@ -31,6 +31,7 @@ class Origin(StrEnum):
     FOLDER = "folder"  # an ancestor folder's decision
     RULE = "rule"  # an always-delete / always-keep rule
     COMPANION = "companion"  # AppleDouble ._name following its companion (D20)
+    EXCLUDED = "excluded"  # Degreaser's own .degreaser/ folder: never triaged or touched
 
 
 Category = tuple[str, ...]  # ordered tag names, broad → specific
