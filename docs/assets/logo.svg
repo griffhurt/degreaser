@@ -9,13 +9,16 @@
       <stop offset="0" stop-color="#ffffff"/>
       <stop offset="1" stop-color="#e4e4fb"/>
     </linearGradient>
+    <!-- Four-point sparkle, centred on the origin, 80 units across -->
+    <path id="sparkle" d="M0 -40 C 5 -12, 12 -5, 40 0 C 12 5, 5 12, 0 40 C -5 12, -12 5, -40 0 C -12 -5, -5 -12, 0 -40 Z"/>
   </defs>
   <!-- App-icon tile -->
   <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
 
-  <!-- Artwork, centred optically on the tile -->
-  <g transform="translate(-28 -12)">
-    <!-- Spray mist, starting a clear gap past the nozzle tip (x=356) -->
+  <!-- Bottle, drawn upright (head on top, nozzle pointing right), then tilted 45° anticlockwise
+       about its centre so the head sits top-left and the body bottom-right. -->
+  <g transform="translate(264 280) rotate(-45) scale(0.76) translate(-238 -278)">
+    <!-- Spray mist, a clear gap past the nozzle tip (x=356) -->
     <g stroke="#ffffff" stroke-width="14" stroke-linecap="round" fill="none">
       <line x1="378" y1="126" x2="402" y2="110"/>
       <line x1="384" y1="152" x2="414" y2="152"/>
@@ -26,30 +29,28 @@
       <circle cx="444" cy="152" r="9"/>
       <circle cx="430" cy="210" r="9"/>
     </g>
-
-    <!-- Trigger: hangs from the front of the head, clear of the bottle (body ends at x=296) -->
+    <!-- Trigger -->
     <path d="M292 184 L 316 166 C 336 196, 338 228, 328 250 C 323 260, 310 258, 312 247
-             C 318 228, 316 208, 296 198 Z"
-          fill="#ffffff"/>
-    <!-- Sprayer head with nozzle; flat underside at y=188 from x=178 to x=294 -->
+             C 318 228, 316 208, 296 198 Z" fill="#ffffff"/>
+    <!-- Sprayer head with nozzle -->
     <path d="M150 128 C 150 112, 162 100, 178 100 L 292 100 C 316 100, 330 116, 336 132 L 344 132
              C 352 132, 356 138, 356 146 L 356 158 C 356 166, 352 172, 344 172 L 320 172
-             C 316 182, 306 188, 294 188 L 178 188 C 162 188, 150 176, 150 160 Z"
-          fill="#ffffff"/>
+             C 316 182, 306 188, 294 188 L 178 188 C 162 188, 150 176, 150 160 Z" fill="#ffffff"/>
     <!-- Neck: from the head's underside (y=188) to the bottle's top (y=226) -->
     <rect x="182" y="188" width="74" height="38" fill="#e9e9fc"/>
     <!-- Bottle body -->
     <path d="M168 226 L 252 226 C 278 226, 296 246, 296 272 L 296 420 C 296 440, 280 456, 260 456
              L 156 456 C 136 456, 120 440, 120 420 L 120 276 C 120 248, 140 226, 168 226 Z"
           fill="url(#white)"/>
-    <!-- Label with a check mark -->
-    <rect x="146" y="300" width="124" height="104" rx="18" fill="#5b5bd6" fill-opacity="0.22"/>
-    <path d="M174 352 L 198 376 L 244 330" fill="none" stroke="#5b5bd6" stroke-width="16"
-          stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.85"/>
-
-    <!-- Sparkle: freshly cleaned -->
-    <path d="M398 300 C 403 328, 410 335, 438 340 C 410 345, 403 352, 398 380
-             C 393 352, 386 345, 358 340 C 386 335, 393 328, 398 300 Z"
-          fill="#ffffff"/>
+    <!-- Round label: looks the same at any tilt -->
+    <circle cx="208" cy="356" r="58" fill="#5b5bd6" fill-opacity="0.22"/>
   </g>
+
+  <!-- Check mark on the label, kept upright (drawn outside the tilted group) -->
+  <path d="M264.0 338.0 L 282.2 356.3 L 317.2 321.3" fill="none" stroke="#5b5bd6" stroke-width="12.2"
+        stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.85"/>
+
+  <!-- Sparkles in the two open corners -->
+  <use href="#sparkle" transform="translate(398 158) scale(0.95)" fill="#ffffff"/>
+  <use href="#sparkle" transform="translate(128 384) scale(0.7)" fill="#ffffff"/>
 </svg>

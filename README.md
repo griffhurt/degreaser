@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" width="128" height="128" alt="Degreaser logo: a white spray bottle with a check-mark label, spraying, on an indigo tile">
+  <img src="docs/assets/logo.svg" width="128" height="128" alt="Degreaser logo: a tilted white spray bottle with a check-mark label, spraying, with two sparkles, on an indigo tile">
 </p>
 
 <h1 align="center">Degreaser</h1>
