@@ -23,7 +23,7 @@ from tests.fixtures.preview.helpers import RemoteLikeSource, jpeg_bytes, jpeg_wi
 
 def test_text_reader_incremental_utf8(tmp_path: Path) -> None:
     text = "ünïcödé line\n" * 5000
-    (tmp_path / "t.txt").write_text(text, encoding="utf-8")
+    (tmp_path / "t.txt").write_text(text, encoding="utf-8", newline="")
     src = LocalSource(tmp_path)
     size = src.stat("t.txt").size or 0
     reader = TextReader(src, "t.txt", size, "utf-8", bom=False)

@@ -73,7 +73,7 @@ def make_pdf(path: Path, pages: int = 2) -> Path:
 def test_text_preview_and_load_more(qtbot: QtBot, pane: PreviewPane, tmp_path: Path) -> None:
     line = "the quick brown fox ünïcödé\n"
     body = line * 5000  # ~150 KB: more than the first 64 KB sample
-    (tmp_path / "story.txt").write_text(body, encoding="utf-8")
+    (tmp_path / "story.txt").write_text(body, encoding="utf-8", newline="")
     src = LocalSource(tmp_path)
     show(qtbot, pane, src, "story.txt")
     view = pane.view

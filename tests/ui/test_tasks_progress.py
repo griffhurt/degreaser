@@ -16,14 +16,15 @@ def test_submit_delivers_progress_and_result_on_ui_thread(qtbot: QtBot) -> None:
         progress(2)
         return "done"
 
+    # Wait on the effects, not task.signals.finished: the worker may finish (and emit)
+    # before a waitSignal() would start listening.
     task = submit(
         work,
         on_progress=lambda p: seen.append(("progress", p, threading.get_ident())),
         on_result=lambda r: seen.append(("result", r, threading.get_ident())),
     )
-    with qtbot.waitSignal(task.signals.finished, timeout=5000):
-        pass
-    qtbot.waitUntil(lambda: len(seen) == 3)
+    qtbot.waitUntil(lambda: len(seen) == 3, timeout=5000)
+    del task
     assert [(k, v) for k, v, _ in seen] == [("progress", 1), ("progress", 2), ("result", "done")]
     assert all(t == ui_thread for _, _, t in seen)
 
@@ -35,9 +36,8 @@ def test_submit_reports_errors(qtbot: QtBot) -> None:
         raise ValueError("nope")
 
     task = submit(boom, on_error=errors.append)
-    with qtbot.waitSignal(task.signals.finished, timeout=5000):
-        pass
-    qtbot.waitUntil(lambda: bool(errors))
+    qtbot.waitUntil(lambda: bool(errors), timeout=5000)
+    del task
     assert isinstance(errors[0], ValueError)
 
 
@@ -61,3 +61,11 @@ def test_progress_dialog_cancel(qtbot: QtBot) -> None:
         dialog.reject()
     assert dialog.cancel_button.text() == "Stopping…"
     dialog.finish()
+
+
+def test_keep_alive_releases_finished_tasks(qtbot: QtBot) -> None:
+    alive: set = set()
+    results: list[int] = []
+    submit(lambda _p: 42, on_result=results.append, keep_alive=alive)
+    assert len(alive) == 1
+    qtbot.waitUntil(lambda: results == [42] and not alive, timeout=5000)

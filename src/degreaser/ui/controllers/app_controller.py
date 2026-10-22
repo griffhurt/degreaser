@@ -112,9 +112,13 @@ class AppController(QObject):
             QMessageBox.warning(self.projects_window, "Check failed", f"{exc}")
             self._open_triage(project, None)
 
-        task = submit(work, on_result=done, on_error=failed, on_progress=on_progress)
-        self._tasks.add(task)
-        task.signals.finished.connect(lambda: self._tasks.discard(task))
+        submit(
+            work,
+            on_result=done,
+            on_error=failed,
+            on_progress=on_progress,
+            keep_alive=self._tasks,
+        )
         dialog.start()
 
     def _open_triage(self, project: Project, rescan: RescanSummary | None) -> None:

@@ -46,9 +46,15 @@ def submit(
     on_progress: Callable[[Any], None] | None = None,
     on_finished: Callable[[], None] | None = None,
     pool: QThreadPool | None = None,
+    keep_alive: set[Task] | None = None,
 ) -> Task:
+    """Start fn on the pool. All slots are connected before the task starts, so no emission
+    can be missed. With keep_alive, the task holds itself in that set until it finishes."""
     task = Task(fn)
     task.setAutoDelete(False)  # keep `signals` alive until the caller drops the Task
+    if keep_alive is not None:
+        keep_alive.add(task)
+        task.signals.finished.connect(lambda: keep_alive.discard(task))
     for signal, slot in (
         (task.signals.result, on_result),
         (task.signals.error, on_error),

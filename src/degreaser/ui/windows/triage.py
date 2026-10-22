@@ -505,10 +505,7 @@ class TriageWindow(QMainWindow):
     # Background work ----------------------------------------------------------------------
 
     def _submit(self, fn: Any, **slots: Any) -> Task:
-        task = submit(fn, **slots)
-        self._tasks.add(task)
-        task.signals.finished.connect(lambda t=task: self._tasks.discard(t))
-        return task
+        return submit(fn, keep_alive=self._tasks, **slots)
 
     def _list_then_advance(self, folder: str) -> None:
         source = self.source
