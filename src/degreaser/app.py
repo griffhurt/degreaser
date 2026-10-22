@@ -5,18 +5,14 @@ import json
 import os
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow
+from PySide6.QtWidgets import QApplication
 
 from degreaser import __version__
+from degreaser.ui.windows.projects import ProjectsWindow
 
 
-def build_main_window() -> QMainWindow:
-    # Placeholder until the project list window lands in M1.
-    window = QMainWindow()
-    window.setWindowTitle("Degreaser")
-    window.setCentralWidget(QLabel(f"Degreaser {__version__}"))
-    window.resize(480, 240)
-    return window
+def build_main_window() -> ProjectsWindow:
+    return ProjectsWindow()
 
 
 def run(argv: list[str]) -> int:

@@ -54,6 +54,8 @@ class ProjectInfo:
     name: str
     source: dict[str, Any]
     last_opened: float | None
+    # Status figures cached when the project was last closed (files_known, files_triaged, ...).
+    last_summary: dict[str, Any] | None = None
 
     @property
     def source_description(self) -> str:
@@ -213,6 +215,23 @@ class Project:
     def save_settings(self, settings: ProjectSettings) -> None:
         self.set_meta("settings", asdict(settings))
 
+    def rules(self) -> tuple[list[str], list[str]]:
+        """(always_delete patterns, always_keep patterns) in order, including disabled ones."""
+        rows = self.conn.execute("SELECT kind, pattern FROM rules ORDER BY position, id").fetchall()
+        return (
+            [r["pattern"] for r in rows if r["kind"] == "always_delete"],
+            [r["pattern"] for r in rows if r["kind"] == "always_keep"],
+        )
+
+    def replace_rules(self, always_delete: list[str], always_keep: list[str]) -> None:
+        with tx(self.conn):
+            self.conn.execute("DELETE FROM rules")
+            self.conn.executemany(
+                "INSERT INTO rules(kind, pattern, position) VALUES (?, ?, ?)",
+                [("always_delete", p, i) for i, p in enumerate(always_delete)]
+                + [("always_keep", p, i) for i, p in enumerate(always_keep)],
+            )
+
     @property
     def cache_dir(self) -> Path:
         return paths.project_cache_dir(self.uuid)
@@ -238,6 +257,7 @@ def list_projects() -> list[ProjectInfo]:
                 name=meta.get("name", "?"),
                 source=meta.get("source", {}),
                 last_opened=meta.get("last_opened"),
+                last_summary=meta.get("last_summary"),
             )
         )
     return sorted(infos, key=lambda p: p.last_opened or 0, reverse=True)
