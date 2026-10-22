@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Degreaser</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7474f2"/>
+      <stop offset="1" stop-color="#4338ca"/>
+    </linearGradient>
+    <linearGradient id="drop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e4e4fb"/>
+    </linearGradient>
+  </defs>
+  <!-- App-icon tile -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <!-- Droplet -->
+  <path d="M238 92
+           C 238 92, 112 236, 112 318
+           A 126 126 0 0 0 364 318
+           C 364 236, 238 92, 238 92 Z"
+        fill="url(#drop)"/>
+  <!-- Highlight inside the drop -->
+  <path d="M168 318 A 70 70 0 0 0 214 384"
+        fill="none" stroke="#5b5bd6" stroke-opacity="0.35" stroke-width="18" stroke-linecap="round"/>
+  <!-- Sparkle: freshly cleaned -->
+  <path d="M374 96
+           C 380 132, 388 140, 424 146
+           C 388 152, 380 160, 374 196
+           C 368 160, 360 152, 324 146
+           C 360 140, 368 132, 374 96 Z"
+        fill="#ffffff"/>
+  <path d="M410 214
+           C 413 230, 417 234, 433 237
+           C 417 240, 413 244, 410 260
+           C 407 244, 403 240, 387 237
+           C 403 234, 407 230, 410 214 Z"
+        fill="#ffffff" fill-opacity="0.75"/>
+</svg>

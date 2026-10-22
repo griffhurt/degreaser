@@ -1,8 +1,22 @@
-# Degreaser
+<p align="center">
+  <img src="docs/assets/logo.svg" width="128" height="128" alt="Degreaser logo: a white droplet with a sparkle on an indigo tile">
+</p>
+
+<h1 align="center">Degreaser</h1>
+
+<p align="center"><b>Work through a messy file tree one file at a time — keep, delete, categorise — then commit.</b></p>
 
 Degreaser is a cross-platform desktop app (macOS, Windows and Linux) for working through large, messy file trees one file at a time. Old computer backups on a Samba share are the motivating case. For each file you decide whether to **keep**, **delete**, **categorise** (tag) or **skip** it, using the keyboard and with a preview on screen. Nothing on disk changes while you triage. When you are ready, you **commit**, and Degreaser carries out the deletions and records your categories in `.degreaser/catalog.json`. The commit is resumable. Project state can be synced through the project folder, so you can continue on another computer.
 
-> **Status:** design phase. No code has been written yet. The documents below are the agreed specification. Read them before changing behaviour, and update them when behaviour changes.
+> **Status:** milestone 1 is complete: the full triage-and-commit flow works on local folders (and on shares mounted by the OS). SMB access, background downloads and multi-device sync come in milestone 2; see [docs/roadmap.md](docs/roadmap.md). The documents below are the agreed specification. Read them before changing behaviour, and update them when behaviour changes.
+
+## Running it
+
+```sh
+uv sync --all-groups
+uv run degreaser                 # follows the OS light/dark setting
+uv run degreaser --theme dark    # or force light / dark
+```
 
 ## Documentation
 
