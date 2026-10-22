@@ -5,33 +5,51 @@
       <stop offset="0" stop-color="#7474f2"/>
       <stop offset="1" stop-color="#4338ca"/>
     </linearGradient>
-    <linearGradient id="drop" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="white" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#ffffff"/>
       <stop offset="1" stop-color="#e4e4fb"/>
     </linearGradient>
   </defs>
   <!-- App-icon tile -->
   <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
-  <!-- Droplet -->
-  <path d="M238 92
-           C 238 92, 112 236, 112 318
-           A 126 126 0 0 0 364 318
-           C 364 236, 238 92, 238 92 Z"
-        fill="url(#drop)"/>
-  <!-- Highlight inside the drop -->
-  <path d="M168 318 A 70 70 0 0 0 214 384"
-        fill="none" stroke="#5b5bd6" stroke-opacity="0.35" stroke-width="18" stroke-linecap="round"/>
-  <!-- Sparkle: freshly cleaned -->
-  <path d="M374 96
-           C 380 132, 388 140, 424 146
-           C 388 152, 380 160, 374 196
-           C 368 160, 360 152, 324 146
-           C 360 140, 368 132, 374 96 Z"
+
+  <!-- Artwork, centred optically on the tile -->
+  <g transform="translate(-22 -16)">
+
+  <!-- Spray mist fanning out of the nozzle -->
+  <g stroke="#ffffff" stroke-width="14" stroke-linecap="round" fill="none">
+    <line x1="352" y1="128" x2="382" y2="108"/>
+    <line x1="358" y1="152" x2="394" y2="152"/>
+    <line x1="352" y1="176" x2="382" y2="196"/>
+  </g>
+  <g fill="#ffffff" fill-opacity="0.75">
+    <circle cx="410" cy="92" r="9"/>
+    <circle cx="424" cy="152" r="9"/>
+    <circle cx="410" cy="212" r="9"/>
+  </g>
+
+  <!-- Trigger -->
+  <path d="M262 176 L300 176 C 312 210, 312 238, 296 266 C 290 276, 276 274, 278 262 C 288 236, 284 210, 262 190 Z"
         fill="#ffffff"/>
-  <path d="M410 214
-           C 413 230, 417 234, 433 237
-           C 417 240, 413 244, 410 260
-           C 407 244, 403 240, 387 237
-           C 403 234, 407 230, 410 214 Z"
-        fill="#ffffff" fill-opacity="0.75"/>
+  <!-- Sprayer head with nozzle -->
+  <path d="M150 128 C 150 112, 162 100, 178 100 L 292 100 C 316 100, 330 116, 336 132 L 344 132
+           C 352 132, 356 138, 356 146 L 356 158 C 356 166, 352 172, 344 172 L 320 172
+           C 316 182, 306 188, 294 188 L 178 188 C 162 188, 150 176, 150 160 Z"
+        fill="#ffffff"/>
+  <!-- Neck -->
+  <rect x="176" y="182" width="84" height="44" rx="8" fill="#e9e9fc"/>
+  <!-- Bottle body -->
+  <path d="M168 226 L 268 226 C 296 226, 316 248, 316 276 L 316 420 C 316 440, 300 456, 280 456
+           L 156 456 C 136 456, 120 440, 120 420 L 120 276 C 120 248, 140 226, 168 226 Z"
+        fill="url(#white)"/>
+  <!-- Label -->
+  <rect x="150" y="300" width="136" height="104" rx="18" fill="#5b5bd6" fill-opacity="0.22"/>
+  <path d="M182 352 L 206 376 L 254 328" fill="none" stroke="#5b5bd6" stroke-width="16"
+        stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.85"/>
+
+  <!-- Sparkle: freshly cleaned -->
+  <path d="M398 300 C 403 328, 410 335, 438 340 C 410 345, 403 352, 398 380
+           C 393 352, 386 345, 358 340 C 386 335, 393 328, 398 300 Z"
+        fill="#ffffff"/>
+  </g>
 </svg>
