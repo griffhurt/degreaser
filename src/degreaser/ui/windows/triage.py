@@ -4,7 +4,7 @@ import time
 from dataclasses import asdict
 from typing import Any
 
-from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtCore import QObject, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QResizeEvent, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
@@ -23,12 +23,14 @@ from degreaser.core.categories import CategoryStore, Completer, format_category
 from degreaser.core.commit import TrashBatch, empty_trash, list_trash_batches
 from degreaser.core.model import Effective, EffectiveState, WalkResult
 from degreaser.core.preview.cache import PreviewCache
+from degreaser.core.preview.downloads import DownloadQueue, NotDeferrable, Prepared, Priority
+from degreaser.core.preview.media_server import MediaServer
 from degreaser.core.preview.metadata import MetaRow
 from degreaser.core.project import Project
 from degreaser.core.rules import RuleSet
 from degreaser.core.scan import CancelToken, Indexer, IndexProgress, IndexSummary, list_dir_into_db
 from degreaser.core.settings import Settings
-from degreaser.core.sources.base import Entry, FileSource, basename, join
+from degreaser.core.sources.base import Capability, Entry, FileSource, basename, join
 from degreaser.core.triage import full_walk, sweep_first
 from degreaser.core.triage.session import (
     ActionResult,
@@ -87,6 +89,14 @@ def describe_state(state: EffectiveState) -> str:
     return text
 
 
+class _DownloadEvents(QObject):
+    """Carries DownloadQueue callbacks (worker threads) to the UI thread."""
+
+    done = Signal(str, int, object)  # rel, priority, Prepared
+    failed = Signal(str, int, object)  # rel, priority, exception
+    progress = Signal(str, int, int)  # rel, bytes done, total
+
+
 class TriageWindow(QMainWindow):
     closed = Signal()
 
@@ -113,8 +123,11 @@ class TriageWindow(QMainWindow):
         self._build_ui()
         self._build_menus()
         self._build_shortcuts()
+        self.downloads = self._make_downloads()
+        self._done_shown = False
 
         self.show_advance(self.session.start())
+        self._resume_deferred()
         self._start_indexer()
         self._request_walk()
 
@@ -152,8 +165,11 @@ class TriageWindow(QMainWindow):
         self.mode_label.setProperty("role", "muted")
         self.index_label = QLabel()
         self.index_label.setProperty("role", "faint")
+        self.download_label = QLabel()
+        self.download_label.setProperty("role", "faint")
         top.addWidget(self.mode_label)
         top.addWidget(self.index_label)
+        top.addWidget(self.download_label)
         self.review_button = QPushButton("Review && Commit")
         self.review_button.setProperty("variant", "primary")
         self.review_button.clicked.connect(self.open_review)
@@ -251,7 +267,14 @@ class TriageWindow(QMainWindow):
 
     def _make_preview(self) -> PreviewPane:
         self.preview_cache = PreviewCache(self.project.cache_dir)
-        pane = PreviewPane(self.app_settings.downloads, self.app_settings.video, self.preview_cache)
+        remote = Capability.LOCAL_PATH not in self.source.capabilities
+        self.media_server = MediaServer() if remote else None
+        pane = PreviewPane(
+            self.app_settings.downloads,
+            self.app_settings.video,
+            self.preview_cache,
+            self.media_server,
+        )
         pane.metadataChanged.connect(self._metadata_changed)
         pane.openRequested.connect(lambda _rel: self.open_current())
         return pane
@@ -321,6 +344,7 @@ class TriageWindow(QMainWindow):
         self._update_summary()
 
     def show_item(self, item: Item) -> None:
+        self._done_shown = False
         self._update_undo_labels()
         self.stack.setCurrentIndex(0)
         self.action_bar.set_enabled_actions(set(self.action_bar.buttons))
@@ -335,12 +359,19 @@ class TriageWindow(QMainWindow):
         self.mode_label.setText(
             "Reviewing skipped files" if self.session.mode is Mode.REVIEW_SKIPPED else ""
         )
+        self._sweep_cache()
+        self._prefetch()
 
     def show_preview(self, path: str, entry: Entry | None) -> None:
         if entry is None:
             self.preview.clear()
             return
-        self.preview.show_file(self.source, path, entry)
+        prepared = self.downloads.prepared(path) if self.downloads else None
+        if prepared is not None and prepared.detection is not None:
+            # Detected in the background already: no round trip before the preview starts.
+            self.preview.show_file(self.source, path, entry, prepared.detection, prepared.head)
+        else:
+            self.preview.show_file(self.source, path, entry)
 
     def show_metadata(self, path: str, entry: Entry | None) -> None:
         self.metadata.set_rows(self.preview.metadata_rows() if entry else [])
@@ -391,6 +422,7 @@ class TriageWindow(QMainWindow):
             detail = f"{files} files ({size}) to delete · {categorised} categorised"
         self._show_message("Nothing left to triage", detail, icon="circle-check", done=True)
         self.mode_label.setText("")
+        self._done_shown = True
 
     def _entry(self, path: str) -> Entry | None:
         row = self.project.conn.execute(
@@ -438,7 +470,7 @@ class TriageWindow(QMainWindow):
             case "delete":
                 self._apply(self.session.delete())
             case "skip":
-                self._apply(self.session.skip())
+                self._skip()
             case "tag":
                 self._begin_tag(None)
             case "tag_folder":
@@ -617,10 +649,147 @@ class TriageWindow(QMainWindow):
         local = self.source.local_path(item.path)
         if local is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(local)))
+            return
+        entry = self._entry(item.path)
+        if entry is None or self.downloads is None:
+            return
+        size = entry.size or 0
+        if size > self.app_settings.downloads.large_warning_bytes:
+            answer = QMessageBox.question(
+                self,
+                "Download to open?",
+                f"“{basename(item.path)}” is {human_bytes(size)}. It has to be downloaded "
+                "before another app can open it.",
+                QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self.notify(f"Downloading {basename(item.path)} to open it…", ms=3000)
+        self.downloads.request(item.path, entry, Priority.OPEN)
+        self._update_downloads()
 
     def expand_preview(self) -> None:
         if self.session.current is not None and not self.category_input.isVisible():
             self.preview.expand()
+
+    # Remote files: prefetch, deferred skips, Open -------------------------------------------
+
+    def _make_downloads(self) -> DownloadQueue | None:
+        if Capability.LOCAL_PATH in self.source.capabilities:
+            return None  # previews read local files directly; nothing to fetch ahead
+        events = _DownloadEvents(self)
+        events.done.connect(self._download_done)
+        events.failed.connect(self._download_failed)
+        events.progress.connect(self._download_progress)
+        return DownloadQueue(
+            self.source,
+            self.preview_cache,
+            self.app_settings.downloads,
+            on_done=events.done.emit,
+            on_failed=events.failed.emit,
+            on_progress=events.progress.emit,
+        )
+
+    def _skip(self) -> None:
+        item = self.session.current
+        if item is None:
+            return
+        entry = self._entry(item.path)
+        loading = self.downloads is not None and self.preview.is_loading
+        result = self.session.skip(defer=loading)
+        if result.deferred and self.downloads is not None and entry is not None:
+            # Keep loading it in the background; it comes back once it's ready (§5).
+            self.downloads.request(item.path, entry, Priority.DEFERRED)
+            self.notify(
+                f"Deferred {basename(item.path)}",
+                "It comes back once its preview has loaded",
+            )
+            self.show_advance(result.advance)
+            self._update_downloads()
+            return
+        self._apply(result)
+
+    def _resume_deferred(self) -> None:
+        """Deferred files from an earlier session start loading again (jump-back is on)."""
+        if self.downloads is None:
+            self.session.convert_deferred_to_skip()
+            return
+        for path in self.session.deferred_paths():
+            entry = self._entry(path)
+            if entry is None:
+                self.session.convert_deferred_to_skip(path)
+            else:
+                self.downloads.request(path, entry, Priority.DEFERRED)
+        self._update_downloads()
+
+    def _prefetch(self) -> None:
+        if self.downloads is None:
+            return
+        upcoming = [p for p in self.session.lookahead(3) if p != self._current_path()]
+        self.downloads.retain_only(Priority.PREFETCH, set(upcoming))
+        for path in upcoming:
+            if (entry := self._entry(path)) is not None:
+                self.downloads.request(path, entry, Priority.PREFETCH)
+        self._update_downloads()
+
+    def _current_path(self) -> str | None:
+        item = self.session.current
+        return item.path if item else None
+
+    def _sweep_cache(self) -> None:
+        """Drop temporary copies of files that are decided and off screen (previews.md §4)."""
+        cache = self.preview_cache
+        for rel in cache.rels():
+            try:
+                action = self.session.state_of(rel).action
+            except KeyError:
+                action = Effective.DELETE  # gone from the tree
+            decided = action not in (Effective.UNTRIAGED, Effective.DEFERRED)
+            cache.mark(rel, decided=decided)
+        cache.sweep()
+
+    def _download_done(self, rel: str, priority: int, prepared: Prepared) -> None:
+        if self._closing:
+            return
+        if priority == Priority.OPEN and prepared.path is not None:
+            # Open copies stay until the project closes: the other app may read it later.
+            self.preview_cache.mark(rel, open_pending=True)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(prepared.path)))
+        elif priority == Priority.DEFERRED:
+            self.session.mark_deferred_ready(rel)
+            if self._done_shown:
+                self.show_advance(self.session.advance())
+        self._update_downloads()
+
+    def _download_failed(self, rel: str, priority: int, exc: BaseException) -> None:
+        if self._closing:
+            return
+        if priority == Priority.DEFERRED:
+            self.session.convert_deferred_to_skip(rel)
+            reason = str(exc) if isinstance(exc, NotDeferrable) else "it couldn't be loaded"
+            self.notify(f"Skipped {basename(rel)}", f"{reason[:1].upper()}{reason[1:]}", ms=4000)
+            self._update_summary()
+        elif priority == Priority.OPEN:
+            QMessageBox.warning(self, "Couldn't open the file", f"{basename(rel)}: {exc}")
+        self._update_downloads()
+
+    def _download_progress(self, rel: str, done: int, total: int) -> None:
+        if self.downloads is not None and rel in self.downloads.pending(Priority.OPEN):
+            percent = int(done * 100 / total) if total else 100
+            self.download_label.setText(f"Opening {basename(rel)}… {percent}%")
+
+    def _update_downloads(self) -> None:
+        if self.downloads is None:
+            return
+        opening = self.downloads.pending(Priority.OPEN)
+        waiting = [p for p in self.downloads.pending(Priority.DEFERRED) if p not in opening]
+        if opening:
+            self.download_label.setText(f"Opening {basename(opening[0])}…")
+        elif waiting:
+            self.download_label.setText(f"Loading {len(waiting)} skipped file(s)…")
+        else:
+            self.download_label.setText("")
 
     # Background work ----------------------------------------------------------------------
 
@@ -832,6 +1001,10 @@ class TriageWindow(QMainWindow):
         if self.review_window is not None:
             self.review_window.close()
         self.preview.shutdown()
+        if self.downloads is not None:
+            self.downloads.close()
+        if self.media_server is not None:
+            self.media_server.close()
         self.preview_cache.clear_all()
         summary = self.session.tracker.summary
         if summary is not None:

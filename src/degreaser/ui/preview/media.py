@@ -52,6 +52,7 @@ class MediaView(QWidget):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.url = url
         self.autoplay_muted = autoplay_muted
         self.container = container
         self._ready = False

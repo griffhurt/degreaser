@@ -204,6 +204,26 @@ def test_video_first_frame_seek_and_teardown(
     assert pane.view is not view
 
 
+def test_remote_media_streams_through_the_media_server(qtbot: QtBot, tmp_path: Path) -> None:
+    from degreaser.core.preview.media_server import MediaServer
+
+    make_wav(tmp_path / "tone.wav", seconds=2)
+    src = RemoteLikeSource(tmp_path)
+    server = MediaServer()
+    pane = PreviewPane(media_server=server)
+    qtbot.addWidget(pane)
+    show(qtbot, pane, src, "tone.wav")
+    view = pane.view
+    assert isinstance(view, MediaView)
+    assert view.url.scheme() == "http"
+    qtbot.waitUntil(lambda: server.bytes_served > 0, timeout=TIMEOUT)
+    assert src.bytes_read > 0
+    url = view.url.toString()
+    pane.clear()
+    assert server.lookup(url.split("/")[3]) is None  # revoked when the preview went away
+    server.close()
+
+
 def test_switching_quickly_drops_stale_results(
     qtbot: QtBot, pane: PreviewPane, tmp_path: Path
 ) -> None:

@@ -113,16 +113,16 @@ def test_cache_returns_local_paths_without_copying(tmp_path: Path) -> None:
 def test_cache_downloads_remote_and_follows_lifecycle(tmp_path: Path) -> None:
     root = tmp_path / "share"
     root.mkdir()
-    (root / "f.bin").write_bytes(b"x" * 3_000_000)
+    (root / "f.bin").write_bytes(b"x" * 9_000_000)
     src = RemoteLikeSource(root)
     cache = PreviewCache(tmp_path / "cache")
     seen: list[tuple[int, int]] = []
     path = cache.fetch(src, "f.bin", src.stat("f.bin"), progress=lambda d, t: seen.append((d, t)))
-    assert path.read_bytes() == b"x" * 3_000_000
+    assert path.read_bytes() == b"x" * 9_000_000
     assert not path.stat().st_mode & stat.S_IWUSR  # read-only copy
-    assert seen[-1] == (3_000_000, 3_000_000) and len(seen) == 3
+    assert seen[-1] == (9_000_000, 9_000_000) and len(seen) == 3  # 4 MiB chunks
     assert cache.fetch(src, "f.bin", src.stat("f.bin")) == path  # cached
-    assert src.bytes_read == 3_000_000
+    assert src.bytes_read == 9_000_000
 
     cache.mark("f.bin", on_screen=True, decided=True)
     cache.sweep()
@@ -132,10 +132,10 @@ def test_cache_downloads_remote_and_follows_lifecycle(tmp_path: Path) -> None:
     assert not path.exists()
 
 
-def test_cache_cancel_leaves_no_partial_file(tmp_path: Path) -> None:
+def test_cache_cancel_keeps_only_a_partial_file(tmp_path: Path) -> None:
     root = tmp_path / "share"
     root.mkdir()
-    (root / "f.bin").write_bytes(b"x" * 3_000_000)
+    (root / "f.bin").write_bytes(b"x" * 9_000_000)
     src = RemoteLikeSource(root)
     cache = PreviewCache(tmp_path / "cache")
     token = CancelToken()
@@ -143,7 +143,9 @@ def test_cache_cancel_leaves_no_partial_file(tmp_path: Path) -> None:
         cache.fetch(
             src, "f.bin", src.stat("f.bin"), progress=lambda d, t: token.cancel(), cancel=token
         )
-    assert list((tmp_path / "cache").iterdir()) == []
+    # The .part stays so a later fetch resumes (test_downloads.py); nothing looks complete.
+    [part] = (tmp_path / "cache").iterdir()
+    assert part.name.endswith(".part") and cache.cached("f.bin") is None
 
 
 def test_wipe_all_project_caches(isolated_app_data: Path) -> None:

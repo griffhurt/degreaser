@@ -25,6 +25,7 @@ from degreaser.core.preview.loaders import (
     read_sample,
     zip_listing,
 )
+from degreaser.core.preview.media_server import MediaServer
 from degreaser.core.preview.metadata import (
     BasicMetadata,
     MetaRow,
@@ -47,10 +48,6 @@ from degreaser.ui.preview.pdf import PdfView
 from degreaser.ui.preview.states import LoadingView, MessageView
 from degreaser.ui.preview.text import TextView
 from degreaser.ui.preview.worker import ProgressFn, Worker
-
-# Given (source, rel, entry), return a URL QMediaPlayer can stream, or None. M2's loopback
-# media server plugs in here for SMB; without one, remote media falls back to a full download.
-MediaUrlProvider = Callable[[FileSource, str, Entry], QUrl | None]
 
 
 @dataclass(slots=True)
@@ -75,13 +72,16 @@ class PreviewPane(QWidget):
         limits: Downloads | None = None,
         video: Video | None = None,
         cache: PreviewCache | None = None,
+        media_server: MediaServer | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.limits = limits or Downloads()
         self.video_settings = video or Video()
         self.cache = cache
-        self.media_url_provider: MediaUrlProvider | None = None
+        # Streams remote audio/video over loopback HTTP; without one, they're downloaded first.
+        self.media_server = media_server
+        self._media_url: str | None = None
         self.worker = Worker(self)
         self._stack = QStackedLayout(self)
         self._view: QWidget | None = None
@@ -179,6 +179,9 @@ class PreviewPane(QWidget):
         self.worker.forget_all()
         if self.cache and self.rel is not None:
             self.cache.mark(self.rel, on_screen=False)
+        if self.media_server and self._media_url:
+            self.media_server.revoke(self._media_url)
+        self._media_url = None
         self.rel = None
         self.detection = None
         self.plan = None
@@ -504,13 +507,13 @@ class PreviewPane(QWidget):
             )
             self._set_view(view)
 
-        local = source.local_path(rel)
-        if local is not None:
+        local = source.local_path(rel) or (self.cache.cached(rel) if self.cache else None)
+        if local is not None:  # a local file, or a remote one prefetch already downloaded
             play(QUrl.fromLocalFile(os.fspath(local)))
             return
-        url = self.media_url_provider(source, rel, entry) if self.media_url_provider else None
-        if url is not None:
-            play(url)
+        if self.media_server is not None:
+            self._media_url = self.media_server.register(source, rel, entry.size or 0)
+            play(QUrl(self._media_url))
             return
 
         # No streaming available: progressive download fallback (docs/previews.md §2).

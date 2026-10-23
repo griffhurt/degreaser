@@ -1,7 +1,7 @@
 """Temporary copies of remote files for preview and Open (docs/previews.md §3, §4).
 
-M1 sources are local, so `fetch` returns the real path and nothing is copied. Remote sources
-(M2) download here; the M2 DownloadQueue adds priorities and concurrency on top of `fetch`.
+Local sources return the real path and nothing is copied. Remote files download here; the
+DownloadQueue (core/preview/downloads.py) adds priorities and concurrency on top of `fetch`.
 """
 
 import contextlib
@@ -17,8 +17,9 @@ from pathlib import Path
 from degreaser.core import paths
 from degreaser.core.preview.loaders import CancelToken
 from degreaser.core.sources.base import Entry, FileSource
+from degreaser.core.sources.errors import SourceError
 
-DOWNLOAD_CHUNK = 1024 * 1024
+DOWNLOAD_CHUNK = 4 * 1024 * 1024  # an SMB read_range of this size is one round trip
 
 Progress = Callable[[int, int], None]  # (bytes done, bytes total)
 
@@ -39,6 +40,7 @@ class PreviewCache:
         self._entries: dict[str, _CacheEntry] = {}
         self._retry: set[Path] = set()
         self._lock = threading.Lock()
+        self._file_locks: dict[str, threading.Lock] = {}
 
     def path_for(self, rel: str) -> Path:
         digest = hashlib.sha1(rel.encode("utf-8", "surrogatepass")).hexdigest()[:20]
@@ -53,39 +55,84 @@ class PreviewCache:
         progress: Progress | None = None,
         cancel: CancelToken | None = None,
     ) -> Path:
-        """A local path with the file's full contents, downloading into the cache if needed."""
+        """A local path with the file's full contents, downloading into the cache if needed.
+
+        One download per file at a time: a second caller waits for the first (checking its
+        own cancel token meanwhile). A cancelled download keeps its `.part` file, and the next
+        fetch resumes from there, so a preview the user skipped past can carry on in the
+        background without starting over.
+        """
         local = source.local_path(rel)
         if local is not None:
             return local
-        target = self.path_for(rel)
+        lock = self._lock_for(rel)
+        while not lock.acquire(timeout=0.1):
+            if cancel:
+                cancel.check()
+        try:
+            if (done_path := self.cached(rel)) is not None:
+                return done_path
+            return self._download(source, rel, entry, progress, cancel)
+        finally:
+            lock.release()
+
+    def _lock_for(self, rel: str) -> threading.Lock:
         with self._lock:
-            known = self._entries.get(rel)
-        if known is not None and known.path.exists():
-            return known.path
+            return self._file_locks.setdefault(rel, threading.Lock())
+
+    def _download(
+        self,
+        source: FileSource,
+        rel: str,
+        entry: Entry,
+        progress: Progress | None,
+        cancel: CancelToken | None,
+    ) -> Path:
+        target = self.path_for(rel)
         self.dir.mkdir(parents=True, exist_ok=True)
         part = target.with_name(target.name + ".part")
         total = entry.size or 0
-        done = 0
-        try:
-            with open(part, "wb") as out:
-                while done < total:
-                    if cancel:
-                        cancel.check()
-                    data = source.read_range(rel, done, min(DOWNLOAD_CHUNK, total - done))
-                    if not data:
-                        break
-                    out.write(data)
-                    done += len(data)
-                    if progress:
-                        progress(done, total)
-            os.replace(part, target)
-        finally:
+        done = part.stat().st_size if part.exists() else 0
+        if done > total:
+            part.unlink()
+            done = 0
+        with open(part, "ab") as out:
+            while done < total:
+                if cancel:
+                    cancel.check()
+                data = source.read_range(rel, done, min(DOWNLOAD_CHUNK, total - done))
+                if not data:
+                    break
+                out.write(data)
+                done += len(data)
+                if progress:
+                    progress(done, total)
+        if done < total:
             part.unlink(missing_ok=True)
+            raise SourceError(f"{rel} got shorter while it was downloading", rel)
+        os.replace(part, target)
         # Read-only: edits made in another app must not look like they'd be saved back.
         target.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
         with self._lock:
             self._entries[rel] = _CacheEntry(target)
         return target
+
+    def size_bytes(self) -> int:
+        """Bytes on disk in the cache, including partial downloads."""
+        if not self.dir.exists():
+            return 0
+        return sum(p.stat().st_size for p in self.dir.iterdir() if p.is_file())
+
+    def rels(self) -> list[str]:
+        """Files with a complete copy in the cache."""
+        with self._lock:
+            return list(self._entries)
+
+    def cached(self, rel: str) -> Path | None:
+        """The complete local copy of rel, if one has been downloaded."""
+        with self._lock:
+            known = self._entries.get(rel)
+        return known.path if known is not None and known.path.exists() else None
 
     def mark(
         self,
