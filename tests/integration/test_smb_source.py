@@ -174,6 +174,9 @@ def test_connection_errors(smb_server: SmbTestServer, smb_workdir: str) -> None:
 def test_config_round_trip() -> None:
     config = SmbConfig("nas", "backups", "Laptops/2014", "griff", "HOME", 1445)
     assert SmbConfig.from_source(config.to_source()) == config
+    assert "encrypt" not in config.to_source()
+    encrypted = SmbConfig("nas", "backups", encrypt=True)
+    assert SmbConfig.from_source(encrypted.to_source()) == encrypted
     assert config.describe() == "smb://nas:1445/backups/Laptops/2014"
     assert config.login == "HOME\\griff"
     assert normalise_share_path("\\Laptops\\2014/") == "Laptops/2014"
@@ -194,3 +197,14 @@ def test_probe_is_read_only_and_reports_quirks(
     assert result["findings"]["names_windows_cant_hold"]
     assert any("Windows can't use" in note for note in summarise(result))
     assert sorted(e.name for e in source.list_dir("")) == before  # nothing written
+
+
+def test_encryption_follows_the_server_unless_asked_for(
+    smb_server: SmbTestServer, smb_workdir: str
+) -> None:
+    with connected(_config(smb_server, smb_workdir), smb_server.password) as src:
+        info = src.connection_info()
+        assert not info["encryption"] and info["signing"]
+    config = _config(smb_server, smb_workdir, encrypt=True)
+    with connected(config, smb_server.password) as src:
+        assert src.connection_info()["encryption"]

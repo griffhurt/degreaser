@@ -222,6 +222,9 @@ class SmbConfig:
     username: str = ""
     domain: str = ""
     port: int = 445
+    # Encrypt even if the server doesn't ask for it (needs SMB 3). Off: the server decides,
+    # and unencrypted sessions are signed instead (D39).
+    encrypt: bool = False
 
     @classmethod
     def from_source(cls, source: dict[str, Any]) -> SmbConfig:
@@ -232,6 +235,7 @@ class SmbConfig:
             username=source.get("username", ""),
             domain=source.get("domain", ""),
             port=int(source.get("port", 445)),
+            encrypt=bool(source.get("encrypt", False)),
         )
 
     def to_source(self) -> dict[str, Any]:
@@ -239,6 +243,8 @@ class SmbConfig:
         source |= {"path": self.path, "username": self.username, "domain": self.domain}
         if self.port != 445:
             source["port"] = self.port
+        if self.encrypt:
+            source["encrypt"] = True
         return source
 
     @property
@@ -357,7 +363,8 @@ class SmbSource:
             _disconnect(connection)
             raise _ConnectionLost(str(exc)) from exc
         try:
-            session = Session(connection, cfg.login, self._password)
+            # smbprotocol defaults to requiring encryption, which also refuses SMB 2.x servers.
+            session = Session(connection, cfg.login, self._password, require_encryption=cfg.encrypt)
             session.connect()
             tree = TreeConnect(session, rf"\\{cfg.host}\{cfg.share}")
             tree.connect()

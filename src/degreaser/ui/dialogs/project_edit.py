@@ -226,6 +226,15 @@ class ProjectEditDialog(QDialog):
         smb_form.addRow("Username", self.username_edit)
         smb_form.addRow("Password", self.password_edit)
         smb_form.addRow("Domain", self.domain_edit)
+        self.encrypt_check = QCheckBox("Always encrypt")
+        self.encrypt_check.setChecked(bool(src.get("encrypt", False)))
+        self.encrypt_check.setToolTip(
+            "Encrypt everything sent to and from the server, even if it doesn't ask for it. "
+            "Worth it on networks you don't trust; needs SMB 3. Otherwise the server decides, "
+            "and traffic is signed so it can't be tampered with."
+        )
+        self.encrypt_check.toggled.connect(self._connection_changed)
+        smb_form.addRow("", self.encrypt_check)
         test_row = QHBoxLayout()
         self.test_button = QPushButton("Test Connection")
         self.test_button.clicked.connect(self._test_connection)
@@ -469,6 +478,7 @@ class ProjectEditDialog(QDialog):
             username=self.username_edit.text().strip(),
             domain=self.domain_edit.text().strip(),
             port=int(port) if port.strip().isdigit() else 445,
+            encrypt=self.encrypt_check.isChecked(),
         )
 
     def _connection_changed(self) -> None:
