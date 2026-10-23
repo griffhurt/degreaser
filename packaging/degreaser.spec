@@ -88,7 +88,7 @@ if sys.platform == "darwin":
     app = BUNDLE(
         coll,
         name="Degreaser.app",
-        bundle_identifier="io.github.griffhurt.degreaser",
+        bundle_identifier="com.griffhurt.degreaser",
         version=__version__,
         icon=str(ICONS / "degreaser.icns"),
         codesign_identity=CODESIGN_IDENTITY,
