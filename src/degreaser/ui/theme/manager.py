@@ -94,6 +94,12 @@ class ThemeManager(QObject):
         app.styleHints().colorSchemeChanged.connect(lambda _scheme: self.apply(app))
         self.apply(app)
 
+    def set_mode(self, app: QApplication, dark: bool | None) -> None:
+        """Switch to light (False), dark (True) or following the OS (None)."""
+        if dark != self._override:
+            self._override = dark
+            self.apply(app)
+
     @staticmethod
     def _themed_asset(name: str, color: str, t: Tokens, stroke: int = 2) -> str:
         """Write a recoloured icon to app data for QSS `image: url(...)`; returns its path."""
@@ -119,11 +125,17 @@ class ThemeManager(QObject):
             stylesheet(
                 t,
                 arrow_path=self._themed_asset("chevron-down", t.text_muted, t),
+                up_arrow_path=self._themed_asset("chevron-up", t.text_muted, t),
                 check_path=self._themed_asset("check", t.accent_text, t, stroke=3),
                 mono_family=mono_family(),
             )
         )
         self.changed.emit(self.tokens)
+
+
+def theme_override(name: str) -> bool | None:
+    """The `dark` argument for a theme setting: "light", "dark" or "system" (None)."""
+    return {"light": False, "dark": True}.get(name)
 
 
 _manager: ThemeManager | None = None

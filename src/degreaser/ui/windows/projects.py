@@ -1,7 +1,7 @@
 """Home window: the project list (docs/product-spec.md §3.1)."""
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -24,9 +24,11 @@ from degreaser.core.project import (
     ProjectExists,
     ProjectInfo,
     ProjectInUse,
+    ProjectSettings,
     list_projects,
     remove_project,
 )
+from degreaser.core.settings import Settings
 from degreaser.ui.dialogs.project_edit import ProjectEditDialog, ProjectForm
 from degreaser.ui.format import human_bytes, relative_time
 from degreaser.ui.theme import icon, pixmap, theme
@@ -127,11 +129,30 @@ class _CardList(QListWidget):
         super().keyPressEvent(event)
 
 
+def preferences_shortcut() -> QKeySequence:
+    """⌘, on macOS; Ctrl+, elsewhere (Windows has no standard key for Preferences)."""
+    standard = QKeySequence(QKeySequence.StandardKey.Preferences)
+    return standard if not standard.isEmpty() else QKeySequence("Ctrl+,")
+
+
+def new_project_settings(settings: Settings) -> ProjectSettings:
+    d = settings.defaults
+    return ProjectSettings(
+        jump_back=d.jump_back,
+        retriage_changed=d.retriage_changed,
+        deletion_mode=d.deletion_mode,
+        remove_empty_dirs=d.remove_empty_dirs,
+        sync_enabled=d.sync_enabled,
+    )
+
+
 class ProjectsWindow(QMainWindow):
     open_requested = Signal(str)  # project uuid
+    preferences_requested = Signal()
 
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
         super().__init__()
+        self.settings = settings or Settings()
         self.setWindowTitle("Degreaser")
         fit_to_screen(self, 920, 620)
         self._infos: list[ProjectInfo] = []
@@ -165,6 +186,20 @@ class ProjectsWindow(QMainWindow):
             "Add a project another computer created, from its project folder"
         )
         self.add_existing_button.clicked.connect(self._add_existing)
+        self.preferences_button = QPushButton()
+        self.preferences_button.setProperty("variant", "ghost")
+        self.preferences_button.setIcon(icon("settings", t.text_muted, 18))
+        self.preferences_button.setIconSize(QSize(18, 18))
+        self.preferences_button.setToolTip(
+            "Preferences ("
+            + preferences_shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+            + ")"
+        )
+        self.preferences_button.clicked.connect(self.preferences_requested)
+        QShortcut(preferences_shortcut(), self, self.preferences_requested.emit)
+        side = self.new_button.sizeHint().height()
+        self.preferences_button.setFixedSize(side, side)
+        header.addWidget(self.preferences_button, 0, Qt.AlignmentFlag.AlignTop)
         header.addWidget(self.add_existing_button, 0, Qt.AlignmentFlag.AlignTop)
         header.addWidget(self.new_button, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
@@ -249,7 +284,7 @@ class ProjectsWindow(QMainWindow):
             b.setEnabled(has)
 
     def _new(self) -> None:
-        dialog = ProjectEditDialog(self)
+        dialog = ProjectEditDialog(self, defaults=new_project_settings(self.settings))
         if dialog.exec() != ProjectEditDialog.DialogCode.Accepted:
             return
         form = dialog.result_form()

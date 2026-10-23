@@ -8,9 +8,13 @@ from degreaser.ui.theme.tokens import Tokens
 
 
 def stylesheet(
-    t: Tokens, arrow_path: str = "", check_path: str = "", mono_family: str = "monospace"
+    t: Tokens,
+    arrow_path: str = "",
+    check_path: str = "",
+    mono_family: str = "monospace",
+    up_arrow_path: str = "",
 ) -> str:
-    """arrow_path/check_path: themed images (QSS can only draw these from files).
+    """arrow_path/check_path/up_arrow_path: themed images (QSS can only draw these from files).
     mono_family: the platform's fixed-width font, for text previews."""
     r, rl = t.radius, t.radius_lg
     return f"""
@@ -91,6 +95,24 @@ QPushButton[variant="ghost"], QToolButton[variant="ghost"] {{
     padding: 4px 8px;
 }}
 QPushButton[variant="ghost"]:hover, QToolButton[variant="ghost"]:hover {{ background: {t.surface_alt}; }}
+QPushButton[variant="keycap"] {{
+    font-family: "{mono_family}";
+    font-size: 12px;
+    padding: 5px 12px;
+    background: {t.surface_alt};
+    border-bottom-width: 2px;
+}}
+QPushButton[variant="keycap"]:checked {{
+    font-family: "Inter";
+    background: {t.accent_tint};
+    border-color: {t.accent};
+    color: {t.accent};
+}}
+QPushButton[variant="keycap"][invalid="true"] {{
+    background: {t.danger_tint};
+    border-color: {t.danger};
+    color: {t.danger};
+}}
 QToolButton[variant="crumb"] {{
     background: transparent;
     border: none;
@@ -102,7 +124,7 @@ QToolButton[variant="crumb"] {{
 QToolButton[variant="crumb"]:hover {{ background: {t.surface_alt}; color: {t.text}; }}
 
 /* Inputs ------------------------------------------------------------------------------- */
-QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox {{
+QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
     background: {t.surface};
     border: 1px solid {t.border_strong};
     border-radius: {r}px;
@@ -110,7 +132,30 @@ QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox {{
     selection-background-color: {t.accent};
     selection-color: {t.accent_text};
 }}
-QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus {{ border-color: {t.accent}; }}
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus,
+QSpinBox:focus, QDoubleSpinBox:focus {{ border-color: {t.accent}; }}
+QSpinBox, QDoubleSpinBox {{ padding-right: 24px; }}
+QSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+    subcontrol-origin: border;
+    width: 22px;
+    border: none;
+    background: transparent;
+}}
+QSpinBox::up-button, QDoubleSpinBox::up-button {{
+    subcontrol-position: top right;
+    margin: 3px 3px 0 0;
+}}
+QSpinBox::down-button, QDoubleSpinBox::down-button {{
+    subcontrol-position: bottom right;
+    margin: 0 3px 3px 0;
+}}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{
+    background: {t.surface_alt};
+    border-radius: 4px;
+}}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url("{up_arrow_path}"); width: 12px; height: 12px; }}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url("{arrow_path}"); width: 12px; height: 12px; }}
 QLineEdit[variant="command"] {{ font-size: 15px; padding: 8px 12px; }}
 QComboBox::drop-down {{ border: none; width: 26px; }}
 QComboBox::down-arrow {{ image: url("{arrow_path}"); width: 14px; height: 14px; }}
@@ -179,6 +224,19 @@ QTableView, QTreeView, QListView, QTableWidget, QTreeWidget, QListWidget {{
     alternate-background-color: {t.surface_alt};
     selection-background-color: {t.accent_tint};
     selection-color: {t.text};
+}}
+QListWidget[variant="sidebar"] {{ background: transparent; border: none; padding: 0; }}
+QListWidget[variant="sidebar"]::item {{
+    padding: 7px 10px;
+    margin: 0 0 2px 0;
+    border-radius: {r}px;
+    color: {t.text_muted};
+}}
+QListWidget[variant="sidebar"]::item:hover {{ background: {t.surface_alt}; }}
+QListWidget[variant="sidebar"]::item:selected {{
+    background: {t.accent_tint};
+    color: {t.text};
+    font-weight: 600;
 }}
 QListWidget[variant="cards"] {{ background: transparent; border: none; }}
 QListWidget[variant="cards"]::item {{ border: none; padding: 0; margin: 0 0 8px 0; }}

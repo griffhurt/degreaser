@@ -31,7 +31,9 @@ def run(argv: list[str]) -> int:
         help="with --smoke-test, also write the JSON report to this file",
     )
     parser.add_argument(
-        "--theme", choices=["system", "light", "dark"], default="system", help="colour theme"
+        "--theme",
+        choices=["system", "light", "dark"],
+        help="colour theme for this run (default: the one chosen in Preferences)",
     )
     parser.add_argument(
         "--smb-probe",
@@ -59,9 +61,10 @@ def run(argv: list[str]) -> int:
     app.setApplicationName("Degreaser")
     app.setApplicationVersion(__version__)
 
-    from degreaser.ui.theme import theme
+    from degreaser.ui.theme import theme, theme_override
 
-    theme().install(app, dark={"system": None, "light": False, "dark": True}[args.theme])
+    settings = settings_mod.load()
+    theme().install(app, dark=theme_override(args.theme or settings.appearance.theme))
 
     from degreaser.core.preview.cache import wipe_all_project_caches
     from degreaser.ui.preview.ffmpeg_log import set_ffmpeg_log_level
@@ -69,7 +72,7 @@ def run(argv: list[str]) -> int:
     set_ffmpeg_log_level()  # libav's own "[h264 @ 0x…]" lines bypass Qt logging
     wipe_all_project_caches()  # previews left behind by a crash
 
-    controller = AppController(settings_mod.load())
+    controller = AppController(settings)
     controller.show()
 
     if args.smoke_test:

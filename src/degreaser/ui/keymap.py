@@ -30,6 +30,10 @@ ACTIONS: list[ActionInfo] = [
 ]
 
 ACTION_IDS = [a.id for a in ACTIONS]
+LABELS = {a.id: a.label for a in ACTIONS}
+
+# App shortcuts a triage action can't take (PortableText; Ctrl is ⌘ on macOS).
+RESERVED: dict[str, str] = {"Ctrl+,": "Preferences", "Ctrl+Q": "Quit"}
 
 
 class Keymap:
@@ -60,3 +64,23 @@ class Keymap:
             if not seq.isEmpty():
                 by_key.setdefault(seq.toString(), []).append(action)
         return {k: v for k, v in by_key.items() if len(v) > 1}
+
+    def problems(self) -> list[str]:
+        """Why this keymap can't be saved, one sentence per problem (empty when it can)."""
+        messages = []
+        for key, actions in self.conflicts().items():
+            names = " and ".join(LABELS[a] for a in actions)
+            messages.append(f"{self._native(key)} is used by both {names}.")
+        for action, seq in self._map.items():
+            if seq.isEmpty():
+                messages.append(f"{LABELS[action]} has no shortcut.")
+            elif (owner := RESERVED.get(seq.toString())) is not None:
+                messages.append(
+                    f"{self.label(action)} is the {owner} shortcut; choose another for "
+                    f"{LABELS[action]}."
+                )
+        return messages
+
+    @staticmethod
+    def _native(portable: str) -> str:
+        return QKeySequence(portable).toString(QKeySequence.SequenceFormat.NativeText)

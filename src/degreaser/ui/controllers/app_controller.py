@@ -5,10 +5,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from PySide6.QtCore import QObject
-from PySide6.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QWidget
+from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMessageBox, QWidget
 
 from degreaser import __version__
 from degreaser.core import credentials
+from degreaser.core import settings as settings_mod
 from degreaser.core.commit import find_unfinished_commit
 from degreaser.core.project import Project, ProjectInUse
 from degreaser.core.scan import CancelToken, Rescanner, RescanProgress, RescanSummary
@@ -26,7 +27,9 @@ from degreaser.core.sync import (
 )
 from degreaser.ui.controllers.sync_controller import SyncController
 from degreaser.ui.controllers.tasks import Task, submit
+from degreaser.ui.dialogs.preferences import PreferencesDialog
 from degreaser.ui.dialogs.progress import ProgressDialog
+from degreaser.ui.theme import theme, theme_override
 from degreaser.ui.windows.projects import ProjectsWindow
 from degreaser.ui.windows.triage import TriageWindow
 
@@ -76,13 +79,28 @@ class AppController(QObject):
     def __init__(self, settings: Settings) -> None:
         super().__init__()
         self.settings = settings
-        self.projects_window = ProjectsWindow()
+        self.projects_window = ProjectsWindow(settings)
         self.projects_window.open_requested.connect(self.open_project)
+        self.projects_window.preferences_requested.connect(
+            lambda: self.open_preferences(self.projects_window)
+        )
         self.triage_windows: dict[str, TriageWindow] = {}
         self._tasks: set[Task] = set()
 
     def show(self) -> None:
         self.projects_window.show()
+
+    def open_preferences(self, parent: QWidget) -> None:
+        dialog = PreferencesDialog(self.settings, parent)
+        if dialog.exec() != PreferencesDialog.DialogCode.Accepted:
+            return
+        self.settings.update_from(dialog.result_settings())
+        settings_mod.save(self.settings)
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            theme().set_mode(app, theme_override(self.settings.appearance.theme))
+        for window in self.triage_windows.values():
+            window.apply_preferences()
 
     def open_project(self, project_uuid: str) -> None:
         if window := self.triage_windows.get(project_uuid):
@@ -396,6 +414,7 @@ class AppController(QObject):
         window = TriageWindow(project, self.settings, source, opening.sync)
         self.triage_windows[project.uuid] = window
         window.closed.connect(lambda: self._triage_closed(opening))
+        window.preferences_requested.connect(lambda: self.open_preferences(window))
         window.show()
         notes = list(opening.notes)
         if rescan is not None:

@@ -54,6 +54,16 @@ class Video:
 
 
 @dataclass
+class Appearance:
+    theme: str = "system"  # "system" | "light" | "dark"
+
+
+@dataclass
+class Updates:
+    check_automatically: bool = True
+
+
+@dataclass
 class Settings:
     version: int = 1
     device: Device = field(default_factory=Device)
@@ -61,6 +71,8 @@ class Settings:
     defaults: ProjectDefaults = field(default_factory=ProjectDefaults)
     downloads: Downloads = field(default_factory=Downloads)
     video: Video = field(default_factory=Video)
+    appearance: Appearance = field(default_factory=Appearance)
+    updates: Updates = field(default_factory=Updates)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Settings:
@@ -77,10 +89,22 @@ class Settings:
             defaults=pick(ProjectDefaults, data.get("defaults")),
             downloads=pick(Downloads, data.get("downloads")),
             video=pick(Video, data.get("video")),
+            appearance=pick(Appearance, data.get("appearance")),
+            updates=pick(Updates, data.get("updates")),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    def update_from(self, other: Settings) -> None:
+        """Copy every value from `other` in place: windows hold references to the parts
+        (downloads, video), so replacing them would leave those windows on the old values."""
+        self.version = other.version
+        self.keymap = dict(other.keymap)
+        for name in ("device", "defaults", "downloads", "video", "appearance", "updates"):
+            target, source = getattr(self, name), getattr(other, name)
+            for key in target.__dataclass_fields__:
+                setattr(target, key, getattr(source, key))
 
 
 def load(path: Path | None = None) -> Settings:

@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
-    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -40,6 +39,7 @@ from degreaser.core.sources.smb import (
 from degreaser.core.sync import RemoteState, probe_existing
 from degreaser.ui.controllers.tasks import Task, submit
 from degreaser.ui.widgets.screen import fit_to_screen
+from degreaser.ui.widgets.spin_box import DoubleSpinBox
 
 MB = 1024 * 1024
 
@@ -90,7 +90,7 @@ def test_connection(config: SmbConfig, password: str) -> str:
     return f"Connected. {count:,} item{'s' if count != 1 else ''} in {where}."
 
 
-class _Megabytes(QDoubleSpinBox):
+class _Megabytes(DoubleSpinBox):
     """MB with up to three decimals, shown without trailing zeros ("1 MB", "0.004 MB")."""
 
     def textFromValue(self, value: float) -> str:
@@ -152,8 +152,10 @@ class ProjectEditDialog(QDialog):
         existing: ProjectForm | None = None,
         *,
         adding_existing: bool = False,
+        defaults: ProjectSettings | None = None,
     ) -> None:
-        """`adding_existing`: only ask where the folder is; its name, settings and rules come
+        """`defaults`: starting settings for a new project (from Preferences).
+        `adding_existing`: only ask where the folder is; its name, settings and rules come
         from the state another device saved there (Add Existing Project)."""
         super().__init__(parent)
         self.adding_existing = adding_existing
@@ -176,7 +178,7 @@ class ProjectEditDialog(QDialog):
         form = existing or ProjectForm(
             name="",
             source={"type": "local", "path": ""},
-            settings=ProjectSettings(),
+            settings=defaults or ProjectSettings(),
         )
         layout = QVBoxLayout(content)
         layout.setContentsMargins(0, 0, 6, 0)  # room for the scroll bar

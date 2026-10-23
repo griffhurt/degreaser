@@ -60,7 +60,7 @@ from degreaser.ui.widgets.metadata_table import MetadataTable
 from degreaser.ui.widgets.path_bar import FolderEntry, FolderListing, PathBar
 from degreaser.ui.widgets.screen import fit_to_screen
 from degreaser.ui.widgets.toast import Toast
-from degreaser.ui.windows.projects import save_source_changes
+from degreaser.ui.windows.projects import preferences_shortcut, save_source_changes
 from degreaser.ui.windows.review import ReviewWindow
 
 PATH_BAR_LIMIT = 500
@@ -122,6 +122,7 @@ class _DownloadEvents(QObject):
 
 class TriageWindow(QMainWindow):
     closed = Signal()
+    preferences_requested = Signal()
 
     def __init__(
         self,
@@ -348,6 +349,13 @@ class TriageWindow(QMainWindow):
         self.redo_action.triggered.connect(self.redo)
         edit_menu.addAction(self.undo_action)
         edit_menu.addAction(self.redo_action)
+        edit_menu.addSeparator()
+        # macOS moves this to the application menu (Degreaser → Settings…).
+        preferences = QAction("Preferences…", self)
+        preferences.setMenuRole(QAction.MenuRole.PreferencesRole)
+        preferences.setShortcut(preferences_shortcut())
+        preferences.triggered.connect(self.preferences_requested)
+        edit_menu.addAction(preferences)
         edit_menu.aboutToShow.connect(self._update_undo_labels)
         self._update_undo_labels()
 
@@ -368,6 +376,15 @@ class TriageWindow(QMainWindow):
         # Undo/redo also live on the Edit menu actions; shortcuts keep them working everywhere.
         self.undo_action.setShortcut(self.keymap.sequence("undo"))
         self.redo_action.setShortcut(self.keymap.sequence("redo"))
+
+    def apply_preferences(self) -> None:
+        """Pick up a changed keymap (other preferences are read where they're used)."""
+        self.keymap = Keymap(self.app_settings.keymap)
+        for action, shortcut in self.shortcuts.items():
+            shortcut.setKey(self.keymap.sequence(action))
+        self.undo_action.setShortcut(self.keymap.sequence("undo"))
+        self.redo_action.setShortcut(self.keymap.sequence("redo"))
+        self.action_bar.set_keymap(self.keymap)
 
     def _shortcut(self, action: str, slot: Any) -> None:
         shortcut = QShortcut(self.keymap.sequence(action), self)
