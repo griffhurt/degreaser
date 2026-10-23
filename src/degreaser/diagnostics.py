@@ -88,6 +88,35 @@ def collect() -> dict[str, Any]:
     except Exception as exc:
         report["errors"].append(f"keyring: {exc!r}")
 
+    try:
+        # AVIF previews fall back to Pillow's plugin, which PyInstaller can leave out.
+        from PIL import features
+
+        report["pillow_avif"] = bool(features.check("avif"))
+        if not report["pillow_avif"]:
+            report["errors"].append("Pillow: AVIF support missing")
+    except Exception as exc:
+        report["errors"].append(f"Pillow features: {exc!r}")
+
+    try:
+        # Archive previews: rarfile and the standard library's zstd (a compiled module).
+        import compression.zstd  # noqa: F401
+
+        import rarfile  # noqa: F401
+
+        from degreaser.core.preview import archives  # noqa: F401
+    except Exception as exc:
+        report["errors"].append(f"archives: {exc!r}")
+
+    try:
+        # Pygments imports lexers by name at runtime; a bundle can miss them.
+        from degreaser.core.preview.highlight import lexer_for
+
+        if lexer_for("example.py") is None or lexer_for("example.html") is None:
+            report["errors"].append("syntax highlighting: Pygments lexers missing")
+    except Exception as exc:
+        report["errors"].append(f"syntax highlighting: {exc!r}")
+
     for module in ("smbclient", "pathspec", "puremagic", "charset_normalizer", "keyring", "PIL"):
         try:
             __import__(module)

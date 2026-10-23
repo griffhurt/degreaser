@@ -34,6 +34,14 @@ class Tokens:
     purple: str
     purple_tint: str
     shadow: str
+    # Syntax highlighting in text previews (ui/preview/highlight.py)
+    syntax_keyword: str
+    syntax_string: str
+    syntax_comment: str
+    syntax_number: str  # also constants
+    syntax_function: str
+    syntax_type: str  # classes, builtins, decorators
+    syntax_tag: str  # markup tags, attribute names, property keys
     # Shape and type
     radius: int = 8
     radius_lg: int = 12
@@ -69,6 +77,13 @@ LIGHT = Tokens(
     purple="#7c3aed",
     purple_tint="#f0e9fd",
     shadow="#1a000000",
+    syntax_keyword="#c4264d",
+    syntax_string="#1a6b3a",
+    syntax_comment="#8b8b96",
+    syntax_number="#1d5fc9",
+    syntax_function="#7c3aed",
+    syntax_type="#b25a0c",
+    syntax_tag="#0e7490",
 )
 
 DARK = Tokens(
@@ -98,4 +113,11 @@ DARK = Tokens(
     purple="#a78bfa",
     purple_tint="#251d3d",
     shadow="#66000000",
+    syntax_keyword="#ff7b8a",
+    syntax_string="#86d9a0",
+    syntax_comment="#7a7a85",
+    syntax_number="#7cb4ff",
+    syntax_function="#c4a8ff",
+    syntax_type="#ffb070",
+    syntax_tag="#67d4e6",
 )

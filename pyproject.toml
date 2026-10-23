@@ -17,6 +17,7 @@ dependencies = [
     "platformdirs>=4.13",
     "pillow>=13.0",
     "rarfile>=4.2",
+    "pygments>=2.19",
 ]
 
 [project.scripts]

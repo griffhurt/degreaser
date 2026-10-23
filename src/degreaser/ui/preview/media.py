@@ -6,7 +6,7 @@ then setSource(QUrl()). MPEG-PS/TS seeks land on the next keyframe, so the UI al
 position() back instead of assuming a seek landed where it was asked to.
 """
 
-from PySide6.QtCore import QSize, Qt, QUrl, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtMultimedia import (
     QAudioOutput,
     QMediaFormat,
@@ -34,6 +34,10 @@ from degreaser.core.preview.metadata import (
 )
 
 POSTER_POSITION_MS = 1000
+# A video that loads but shows no frame by then can't be decoded here: Qt's Windows FFmpeg
+# build, for one, decodes AV1 only in hardware and silently delivers nothing without it.
+# Generous, because over SMB the poster frame is streamed.
+NO_FRAME_TIMEOUT_MS = 15_000
 
 
 class MediaView(QWidget):
@@ -209,7 +213,9 @@ class MediaView(QWidget):
                 duration = self.player.duration()
                 self.player.setPosition(min(POSTER_POSITION_MS, duration // 10) if duration else 0)
                 self.player.pause()
-            if not has_video:
+            if has_video:
+                QTimer.singleShot(NO_FRAME_TIMEOUT_MS, self, self._check_frames)
+            else:
                 self._mark_ready()
             self.metadataChanged.emit()
         elif status == QMediaPlayer.MediaStatus.InvalidMedia:
@@ -218,6 +224,16 @@ class MediaView(QWidget):
     def _on_error(self, error: QMediaPlayer.Error, message: str) -> None:
         if error != QMediaPlayer.Error.NoError and not self._torn_down:
             self.failed.emit(message or "This file can't be played.")
+
+    def _check_frames(self) -> None:
+        if self._ready or self._torn_down:
+            return
+        codecs = ", ".join(self.container.video) if self.container else ""
+        what = f"{codecs} video" if codecs else "this video"
+        self.failed.emit(
+            f"No picture could be decoded from {what}. This computer may not have a decoder "
+            "for it (AV1, for example, needs hardware support on Windows)."
+        )
 
     def _on_frame(self, frame: QVideoFrame) -> None:
         if frame.isValid():

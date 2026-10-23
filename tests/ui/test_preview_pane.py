@@ -6,11 +6,13 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QMarginsF, QPointF
+from PIL import Image, features
+from PySide6.QtCore import QMarginsF, QPointF, QUrl
 from PySide6.QtGui import QPageSize, QPainter, QPdfWriter
 from pytestqt.qtbot import QtBot
 
 from degreaser.core.preview.cache import PreviewCache
+from degreaser.core.preview.containers import ContainerInfo
 from degreaser.core.preview.metadata import MetaRow
 from degreaser.core.settings import Downloads
 from degreaser.core.sources.local import LocalSource
@@ -181,6 +183,42 @@ def test_seven_zip_and_encrypted_rar(qtbot: QtBot, pane: PreviewPane, tmp_path: 
     assert isinstance(pane.view, MessageView)
     rows = {r.label: r.value for r in pane.metadata_rows() if r.group == "Archive"}
     assert rows == {"Format": "RAR 5", "Encrypted": "Yes, including file names"}
+
+
+@pytest.mark.skipif(not features.check("avif"), reason="Pillow built without AVIF")
+def test_avif_through_pillow(qtbot: QtBot, pane: PreviewPane, tmp_path: Path) -> None:
+    Image.new("RGB", (320, 200), "teal").save(tmp_path / "a.avif")
+    show(qtbot, pane, LocalSource(tmp_path), "a.avif")
+    assert isinstance(pane.view, ImageView)
+    rows = {r.label: r.value for r in pane.metadata_rows() if r.group == "Image"}
+    assert rows["Dimensions"] == "320 × 200"
+
+
+def test_code_is_highlighted(qtbot: QtBot, pane: PreviewPane, tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("import os\n# comment\n")
+    (tmp_path / "notes.txt").write_text("import os\n")
+    src = LocalSource(tmp_path)
+    show(qtbot, pane, src, "a.py")
+    view = pane.view
+    assert isinstance(view, TextView)
+    qtbot.waitUntil(lambda: view.highlighter is not None, timeout=TIMEOUT)
+    assert view.highlighter is not None
+    formats = view.edit.document().firstBlock().layout().formats()
+    assert formats and formats[0].start == 0 and formats[0].length == len("import")
+    show(qtbot, pane, src, "notes.txt")
+    assert isinstance(pane.view, TextView) and pane.view.highlighter is None
+
+
+def test_video_without_frames_offers_open(qtbot: QtBot) -> None:
+    view = MediaView(QUrl(), container=ContainerInfo("MP4", video=["AV1"]))
+    qtbot.addWidget(view)
+    with qtbot.waitSignal(view.failed) as blocker:
+        view._check_frames()  # what the timer runs when no frame arrived
+    assert blocker.args is not None and "AV1 video" in blocker.args[0]
+    view._mark_ready()  # a frame did arrive: no complaint
+    with qtbot.assertNotEmitted(view.failed):
+        view._check_frames()
+    view.teardown()
 
 
 def test_audio_wav(qtbot: QtBot, pane: PreviewPane, tmp_path: Path) -> None:

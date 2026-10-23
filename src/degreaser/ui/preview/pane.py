@@ -18,6 +18,9 @@ from PySide6.QtWidgets import QStackedLayout, QWidget
 from degreaser.core.preview.archives import ArchiveListing, archive_listing
 from degreaser.core.preview.cache import PreviewCache
 from degreaser.core.preview.detect import Detection, Kind, detect
+from degreaser.core.preview.highlight import MAX_CHARS as MAX_HIGHLIGHT
+from degreaser.core.preview.highlight import lexer_for
+from degreaser.core.preview.highlight import spans as syntax_spans
 from degreaser.core.preview.loaders import (
     Cancelled,
     CancelToken,
@@ -38,7 +41,7 @@ from degreaser.core.preview.metadata import (
 from degreaser.core.preview.office import OfficeDocument, OfficeError, load_office
 from degreaser.core.preview.plan import EXIF_PREFIX, Confirm, Plan, Strategy, plan_preview
 from degreaser.core.settings import Downloads, Video
-from degreaser.core.sources.base import Entry, FileSource
+from degreaser.core.sources.base import Entry, FileSource, basename
 from degreaser.ui.preview.archive import ArchiveView
 from degreaser.ui.preview.document import DocumentView
 from degreaser.ui.preview.hex import HexView
@@ -297,6 +300,21 @@ class PreviewPane(QWidget):
         self._text_reader = reader
         view.append(reader.consume(prepared.head[: prepared.plan.initial_bytes]))
         ceiling = prepared.plan.ceiling_bytes
+        lexer = lexer_for(basename(rel))
+        highlighted = 0  # characters of the view's text that have syntax colours
+
+        def highlight() -> None:
+            nonlocal highlighted
+            text = view.text()
+            if lexer is None or highlighted >= min(len(text), MAX_HIGHLIGHT):
+                return
+            highlighted = min(len(text), MAX_HIGHLIGHT)
+            gen, chosen = self._gen, lexer
+            self.worker.submit(
+                lambda _p: syntax_spans(text, chosen),
+                lambda result: self._guard(gen, view.set_spans, result),
+                lambda _e: None,  # plain text is fine
+            )
 
         def update() -> None:
             more = not reader.eof and reader.offset < ceiling
@@ -313,6 +331,7 @@ class PreviewPane(QWidget):
                 view.set_busy(False)
                 view.append(text)
                 update()
+                highlight()
 
             self.worker.submit(
                 lambda _p: reader.read(step, cancel),
@@ -323,6 +342,7 @@ class PreviewPane(QWidget):
         view.loadMoreRequested.connect(lambda: self._expand() if self._expand else None)
         self._set_view(view)
         update()
+        highlight()
         self._finish_loading()
 
     def _start_hex(self, prepared: _Prepared) -> None:

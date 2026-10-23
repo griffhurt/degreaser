@@ -4,7 +4,9 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFontDatabase, QTextCursor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
+from degreaser.core.preview.highlight import Span
 from degreaser.core.preview.metadata import format_size
+from degreaser.ui.preview.highlight import SpanHighlighter
 
 
 class TextView(QWidget):
@@ -37,6 +39,13 @@ class TextView(QWidget):
         self.more.clicked.connect(self.loadMoreRequested)
         footer.addWidget(self.more)
         layout.addLayout(footer)
+        self.highlighter: SpanHighlighter | None = None
+
+    def set_spans(self, spans: list[Span]) -> None:
+        """Syntax colours for the text so far (core/preview/highlight.py)."""
+        if self.highlighter is None:
+            self.highlighter = SpanHighlighter(self.edit.document())
+        self.highlighter.set_spans(spans)
 
     def append(self, text: str) -> None:
         cursor = self.edit.textCursor()
