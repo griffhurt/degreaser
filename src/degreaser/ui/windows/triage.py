@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
-    QProgressBar,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -209,12 +208,6 @@ class TriageWindow(QMainWindow):
         top.addWidget(self.dup_label)
         top.addWidget(self.sync_label)
         top.addWidget(self.mode_label)
-        self.index_bar = QProgressBar()
-        self.index_bar.setRange(0, 1000)
-        self.index_bar.setFixedWidth(90)
-        self.index_bar.setTextVisible(False)
-        self.index_bar.hide()
-        top.addWidget(self.index_bar)
         top.addWidget(self.index_label)
         top.addWidget(self.download_label)
         self.review_button = QPushButton("Review && Commit")
@@ -927,16 +920,15 @@ class TriageWindow(QMainWindow):
         def on_progress(p: FindProgress) -> None:
             if not self._closing and p.total and p.done < p.total:
                 state = " (paused)" if pause.paused else "…"
-                self.dup_label.setText(f"Finding duplicates{state} {p.done:,} / {p.total:,}")
-                self.index_bar.setValue(round(p.done / p.total * 1000))  # indexing is done
-                self.index_bar.show()
+                self.dup_label.setText(
+                    f"Finding duplicates{state} ({p.done:,} of {p.total:,} files)"
+                )
 
         def done(_summary: FindSummary) -> None:
             self._dup_running = False
             if self._closing:
                 return
             self.dup_label.setText("")
-            self.index_bar.hide()
             self.session.reload_duplicates()
             if self.session.tracker.stale:
                 self._request_walk()
@@ -1039,7 +1031,6 @@ class TriageWindow(QMainWindow):
                 return
             text = {"completed": "", "cancelled": ""}.get(summary.status, "Index incomplete")
             self.index_label.setText(text)
-            self.index_bar.hide()
             self.session.on_tree_changed()
             self._request_walk()
             if summary.status == "completed":
@@ -1050,16 +1041,12 @@ class TriageWindow(QMainWindow):
         self._submit(work, on_result=done, on_progress=on_progress, on_error=self._background_error)
 
     def show_index_progress(self, p: IndexProgress) -> None:
-        """'Indexing 64% · 129,396 of 201,046 folders' with a slim bar. The total is the
-        folders found so far, so the percentage can dip while new subfolders turn up."""
+        """'Indexing… (129,396 of 201,046 folders)'. No percentage or bar: the total is the
+        folders found so far and keeps growing while indexing runs."""
         if not p.dirs_known:
-            self.index_label.setText(f"Indexing… {p.dirs_listed:,} folders")
+            self.index_label.setText(f"Indexing… ({p.dirs_listed:,} folders)")
             return
-        self.index_bar.setValue(round(p.fraction * 1000))
-        self.index_bar.show()
-        self.index_label.setText(
-            f"Indexing {p.fraction:.0%} · {p.dirs_done:,} of {p.dirs_known:,} folders"
-        )
+        self.index_label.setText(f"Indexing… ({p.dirs_done:,} of {p.dirs_known:,} folders)")
         self.index_label.setToolTip(
             "Listing every folder on the source. The total grows as subfolders are found. "
             "Duplicate search starts when indexing finishes."

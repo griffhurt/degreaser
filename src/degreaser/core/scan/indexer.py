@@ -42,14 +42,9 @@ class IndexProgress:
     dirs_listed: int  # by this run
     dirs_pending: int
     entries_found: int
-    # Across every run so far, for a percentage. `dirs_known` grows as listings reveal
-    # subfolders, so the percentage can dip early on; it settles as the tree fills in.
+    # Across every run so far. `dirs_known` grows as listings reveal subfolders.
     dirs_done: int = 0
     dirs_known: int = 0
-
-    @property
-    def fraction(self) -> float:
-        return self.dirs_done / self.dirs_known if self.dirs_known else 0.0
 
 
 @dataclass(frozen=True, slots=True)

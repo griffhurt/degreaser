@@ -172,7 +172,7 @@ def test_concurrent_on_demand_and_background(tmp_path: Path) -> None:
     assert count == 400
 
 
-def test_progress_reports_overall_fraction(tmp_path: Path) -> None:
+def test_progress_counts_folders_across_runs(tmp_path: Path) -> None:
     from degreaser.core.scan import IndexProgress
 
     project, root = make_project(tmp_path, {"a": {"b": {"c": {"x.txt": "1"}}}, "d": {"y": "2"}})
@@ -180,5 +180,4 @@ def test_progress_reports_overall_fraction(tmp_path: Path) -> None:
     Indexer(project.new_connection, FaultySource(root), workers=1, on_progress=seen.append).run()
     last = seen[-1]
     assert last.dirs_done == last.dirs_known == 5  # root, a, a/b, a/b/c, d
-    assert last.fraction == 1.0
-    assert all(0 <= p.fraction <= 1 for p in seen)
+    assert all(p.dirs_done <= p.dirs_known for p in seen)
