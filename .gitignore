@@ -36,3 +36,9 @@ docs/*
 
 # M0 experiments (and their CI workflow, spikes/spikes-workflow.yml) stay local.
 spikes/
+
+# Signing material must never be committed (certificates, notarisation and update keys).
+*.p12
+*.p8
+*.cer
+*-private-key.txt
