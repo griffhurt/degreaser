@@ -161,7 +161,7 @@ class Indexer:
         connect: Callable[[], sqlite3.Connection],
         source: FileSource,
         *,
-        workers: int = 4,
+        workers: int | None = None,
         batch_rows: int = 1000,
         retry_attempts: int = 5,
         on_progress: Callable[[IndexProgress], None] | None = None,
@@ -169,7 +169,7 @@ class Indexer:
     ) -> None:
         self._connect = connect
         self._source = source
-        self._workers = workers
+        self._workers = workers or source.parallelism
         self._batch_rows = batch_rows
         self._attempts = retry_attempts
         self._on_progress = on_progress

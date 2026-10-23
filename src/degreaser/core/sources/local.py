@@ -64,6 +64,8 @@ class LocalSource:
         {Capability.RANGE_READ, Capability.SERVER_RENAME, Capability.LOCAL_PATH, Capability.WRITE}
     )
 
+    parallelism = 4  # disks gain little from more
+
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
 

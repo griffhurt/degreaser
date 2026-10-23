@@ -31,6 +31,10 @@ class Unsupported(SourceError):
     pass
 
 
+class AuthenticationFailed(SourceError):
+    """The server rejected the credentials (permanent until the user fixes them)."""
+
+
 class TransientSourceError(SourceError):
     """Timeouts and lost connections: worth retrying."""
 

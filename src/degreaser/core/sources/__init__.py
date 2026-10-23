@@ -3,6 +3,8 @@
 from degreaser.core.sources.base import Capability, Entry, FileSource, Kind
 from degreaser.core.sources.errors import (
     AlreadyExists,
+    AuthenticationFailed,
+    NotADirectory,
     NotFound,
     PermissionDenied,
     SourceError,
@@ -12,10 +14,12 @@ from degreaser.core.sources.errors import (
 
 __all__ = [
     "AlreadyExists",
+    "AuthenticationFailed",
     "Capability",
     "Entry",
     "FileSource",
     "Kind",
+    "NotADirectory",
     "NotFound",
     "PermissionDenied",
     "SourceError",

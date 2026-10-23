@@ -93,7 +93,7 @@ class Rescanner:
         source: FileSource,
         *,
         retriage_changed: bool,
-        workers: int = 4,
+        workers: int | None = None,
         batch_dirs: int = 200,
         retry_attempts: int = 5,
         on_progress: Callable[[RescanProgress], None] | None = None,
@@ -102,7 +102,7 @@ class Rescanner:
         self._connect = connect
         self._source = source
         self._retriage = retriage_changed
-        self._workers = workers
+        self._workers = workers or source.parallelism
         self._batch_dirs = batch_dirs
         self._attempts = retry_attempts
         self._on_progress = on_progress

@@ -154,3 +154,57 @@ def test_existing_custom_rules_open_locked_in_text_mode(qtbot: QtBot, tmp_path: 
     assert dialog.text_toggle.isChecked() and not dialog.text_toggle.isEnabled()
     assert "*.bak" in dialog.delete_rules.toPlainText()
     assert dialog.result_form().rules == rules
+
+
+def test_parse_smb_location() -> None:
+    from degreaser.ui.dialogs.project_edit import parse_smb_location
+
+    assert parse_smb_location("smb://nas:1445/backups/Laptops/2014") == (
+        "nas",
+        1445,
+        "backups",
+        "Laptops/2014",
+    )
+    unc = parse_smb_location("\\\\nas\\backups\\Old Stuff")
+    assert unc == ("nas", None, "backups", "Old Stuff")
+    assert parse_smb_location("smb://nas/My%20Share") == ("nas", None, "My Share", "")
+    assert parse_smb_location("nas.local") is None
+
+
+def test_dialog_smb_form(qtbot: QtBot) -> None:
+    dialog = ProjectEditDialog()
+    qtbot.addWidget(dialog)
+    dialog.smb_radio.setChecked(True)
+    assert dialog.smb_page.isVisibleTo(dialog) and not dialog.local_page.isVisibleTo(dialog)
+    dialog.name_edit.setText("NAS")
+    dialog.host_edit.setText("smb://nas.local:1445/backups/Laptops/")
+    dialog.host_edit.editingFinished.emit()
+    assert (dialog.host_edit.text(), dialog.share_edit.text()) == ("nas.local:1445", "backups")
+    dialog.username_edit.setText("griff")
+
+    dialog._accept()
+    assert "password" in dialog.error_label.text()
+    dialog.password_edit.setText("secret")
+    form = dialog.result_form()
+    assert form.source == {
+        "type": "smb",
+        "host": "nas.local",
+        "share": "backups",
+        "path": "Laptops",
+        "username": "griff",
+        "domain": "",
+        "port": 1445,
+    }
+    assert form.password == "secret"
+
+
+def test_existing_smb_project_keeps_password_unless_changed(qtbot: QtBot) -> None:
+    source = {"type": "smb", "host": "nas", "share": "b", "path": "", "username": "u"}
+    form = ProjectForm("P", source, ProjectSettings())
+    dialog = ProjectEditDialog(existing=form)
+    qtbot.addWidget(dialog)
+    assert not dialog.host_edit.isEnabled() and dialog.username_edit.isEnabled()
+    dialog._accept()  # no password typed: nothing to test, saves straight away
+    assert dialog.result() == ProjectEditDialog.DialogCode.Accepted
+    assert dialog.result_form().password is None
+    assert dialog.result_form().source["host"] == "nas"

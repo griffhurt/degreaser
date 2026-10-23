@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from degreaser.core import credentials
 from degreaser.core.project import (
     Project,
     ProjectInfo,
@@ -34,6 +35,14 @@ def _restyle(widget: QWidget) -> None:
     """Re-apply the stylesheet after a dynamic property changed."""
     widget.style().unpolish(widget)
     widget.style().polish(widget)
+
+
+def save_source_changes(project: Project, form: ProjectForm) -> None:
+    """The parts of an existing project's source that may change: SMB username and password."""
+    if form.source.get("type") == "smb":
+        project.set_meta("source", form.source)
+        if form.password is not None:
+            credentials.set_password(project.uuid, form.password)
 
 
 class ProjectCard(QFrame):
@@ -238,6 +247,8 @@ class ProjectsWindow(QMainWindow):
         form = dialog.result_form()
         project = Project.create(form.name, form.source, form.settings)
         project.save_rule_config(form.rules)
+        if form.password is not None:
+            credentials.set_password(project.uuid, form.password)
         project.close()
         self.refresh()
         self.open_requested.emit(project.uuid)
@@ -265,6 +276,7 @@ class ProjectsWindow(QMainWindow):
                 project.set_meta("name", result.name)
                 project.save_settings(result.settings)
                 project.save_rule_config(result.rules)
+                save_source_changes(project, result)
         finally:
             project.close()
         self.refresh()

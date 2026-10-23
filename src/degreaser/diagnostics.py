@@ -70,6 +70,24 @@ def collect() -> dict[str, Any]:
     except Exception as exc:
         report["errors"].append(f"QImageReader: {exc!r}")
 
+    try:
+        # SMB login: NTLM needs spnego + cryptography, which PyInstaller can miss.
+        import spnego
+
+        from degreaser.core.sources import smb  # noqa: F401
+
+        token = spnego.client("user", "password", protocol="ntlm").step()
+        report["smb_ntlm"] = bool(token)
+    except Exception as exc:
+        report["errors"].append(f"SMB/NTLM: {exc!r}")
+
+    try:
+        import keyring
+
+        report["keyring_backend"] = type(keyring.get_keyring()).__name__
+    except Exception as exc:
+        report["errors"].append(f"keyring: {exc!r}")
+
     for module in ("smbclient", "pathspec", "puremagic", "charset_normalizer", "keyring", "PIL"):
         try:
             __import__(module)

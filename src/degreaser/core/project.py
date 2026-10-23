@@ -11,12 +11,13 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import IO, Any, Self
 
-from degreaser.core import paths
+from degreaser.core import credentials, paths
 from degreaser.core.db.connection import connect, tx
 from degreaser.core.rules.presets import RuleConfig
 from degreaser.core.sources.base import FileSource
-from degreaser.core.sources.errors import Unsupported
+from degreaser.core.sources.errors import AuthenticationFailed, Unsupported
 from degreaser.core.sources.local import LocalSource
+from degreaser.core.sources.smb import SmbConfig, SmbSource
 
 # Seeded always-delete rules: the default presets (core/rules/presets.py).
 DEFAULT_DELETE_RULES = RuleConfig().patterns("always_delete")
@@ -58,16 +59,18 @@ def describe_source(source: dict[str, Any]) -> str:
         case "local":
             return str(source["path"])
         case "smb":
-            path = source.get("path", "").strip("/")
-            return f"smb://{source['host']}/{source['share']}" + (f"/{path}" if path else "")
+            return SmbConfig.from_source(source).describe()
         case other:
             return f"unknown source {other!r}"
 
 
-def make_source(source: dict[str, Any]) -> FileSource:
+def make_source(source: dict[str, Any], password: str | None = None) -> FileSource:
+    """Build (but don't connect) the source a project's config describes."""
     match source.get("type"):
         case "local":
             return LocalSource(Path(source["path"]))
+        case "smb":
+            return SmbSource(SmbConfig.from_source(source), password or "")
         case other:
             raise Unsupported(f"source type {other!r} is not supported yet")
 
@@ -264,7 +267,14 @@ class Project:
         return paths.project_cache_dir(self.uuid)
 
     def make_source(self) -> FileSource:
-        return make_source(self.source_config)
+        """Callable on the UI thread (it reads meta); the source itself is used on workers."""
+        config = self.source_config
+        password = None
+        if config.get("type") == "smb":
+            password = credentials.get_password(self.uuid)
+            if password is None:
+                raise AuthenticationFailed("no password saved for this project")
+        return make_source(config, password)
 
 
 def list_projects() -> list[ProjectInfo]:
@@ -293,3 +303,4 @@ def list_projects() -> list[ProjectInfo]:
 def remove_project(project_uuid: str) -> None:
     """Delete Degreaser's local data for a project. Never touches the project's files."""
     shutil.rmtree(paths.project_dir(project_uuid))
+    credentials.delete_password(project_uuid)

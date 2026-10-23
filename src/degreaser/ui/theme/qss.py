@@ -29,6 +29,7 @@ QLabel[role="heading"] {{ font-size: 15px; font-weight: 600; }}
 QLabel[role="muted"] {{ color: {t.text_muted}; }}
 QLabel[role="faint"] {{ color: {t.text_faint}; font-size: {t.font_size_small}px; }}
 QLabel[role="error"] {{ color: {t.danger}; font-size: {t.font_size_small}px; }}
+QLabel[role="success"] {{ color: {t.success}; font-size: {t.font_size_small}px; }}
 
 /* Cards and bars ----------------------------------------------------------------------- */
 QFrame[role="card"] {{

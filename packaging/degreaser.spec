@@ -18,6 +18,7 @@ hiddenimports = [
     "PySide6.QtPdfWidgets",
     "PySide6.QtSvg",
     *collect_submodules("smbclient"),
+    *collect_submodules("spnego"),  # NTLM/Kerberos providers are imported by name
     *collect_submodules("keyring.backends"),
 ]
 

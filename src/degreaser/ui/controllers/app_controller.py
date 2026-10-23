@@ -3,13 +3,15 @@
 from typing import Any
 
 from PySide6.QtCore import QObject
-from PySide6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QWidget
 
+from degreaser.core import credentials
 from degreaser.core.commit import find_unfinished_commit
 from degreaser.core.project import Project, ProjectInUse
 from degreaser.core.scan import CancelToken, Rescanner, RescanProgress, RescanSummary
 from degreaser.core.settings import Settings
-from degreaser.core.sources import SourceError
+from degreaser.core.sources import AuthenticationFailed
+from degreaser.core.sources.base import FileSource
 from degreaser.ui.controllers.tasks import Task, submit
 from degreaser.ui.dialogs.progress import ProgressDialog
 from degreaser.ui.windows.projects import ProjectsWindow
@@ -51,37 +53,96 @@ class AppController(QObject):
             window.raise_()
             window.activateWindow()
             return
-        parent: QWidget = self.projects_window
         try:
             project = Project.open(project_uuid)
         except ProjectInUse as exc:
-            QMessageBox.information(parent, "Project is open", str(exc))
+            QMessageBox.information(self.projects_window, "Project is open", str(exc))
             return
+        self._connect(project)
+
+    def _connect(self, project: Project) -> None:
+        """Connect to the source on a worker (SMB can take seconds), asking for the password
+        if there isn't one saved or the server rejects it."""
+        parent: QWidget = self.projects_window
         try:
-            project.make_source().connect()
-        except SourceError as exc:
-            project.close()
-            QMessageBox.warning(parent, "Can't reach the project folder", str(exc))
+            source = project.make_source()
+        except AuthenticationFailed:
+            if self._ask_password(project, "No password is saved for this project."):
+                self._connect(project)
+            else:
+                project.close()
             return
 
+        dialog = ProgressDialog("Connecting", f"Connecting to {source.describe()}…", parent=parent)
+        cancelled = False
+
+        def cancel() -> None:
+            nonlocal cancelled
+            cancelled = True
+
+        def done(_result: object) -> None:
+            dialog.finish()
+            if cancelled:
+                source.close()
+                project.close()
+                return
+            self._after_connect(project, source)
+
+        def failed(exc: BaseException) -> None:
+            dialog.finish()
+            source.close()
+            if cancelled:
+                project.close()
+            elif isinstance(exc, AuthenticationFailed) and self._ask_password(project, str(exc)):
+                self._connect(project)
+            else:
+                project.close()
+                QMessageBox.warning(parent, "Can't reach the project folder", str(exc))
+
+        dialog.cancel_requested.connect(cancel)
+        submit(
+            lambda _progress: source.connect(),
+            on_result=done,
+            on_error=failed,
+            keep_alive=self._tasks,
+        )
+        dialog.start()
+
+    def _ask_password(self, project: Project, reason: str) -> bool:
+        """Prompt for the SMB password and save it. False if the user cancelled."""
+        config = project.source_config
+        who = f"{config.get('username', '')}@{config.get('host', '')}"
+        password, ok = QInputDialog.getText(
+            self.projects_window,
+            "Password needed",
+            f"{reason}\n\nPassword for {who}. It's saved in your system keychain.",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return False
+        credentials.set_password(project.uuid, password)
+        return True
+
+    def _after_connect(self, project: Project, source: FileSource) -> None:
+        parent: QWidget = self.projects_window
         unfinished = find_unfinished_commit(project.conn)
         if unfinished is not None:
             # The commit dialog takes over; triage opens once it's resolved.
             from degreaser.ui.dialogs.commit import resume_unfinished_commit
 
-            if not resume_unfinished_commit(parent, project, unfinished):
+            if not resume_unfinished_commit(parent, project, source, unfinished):
+                source.close()
                 project.close()
                 return
 
         root_listed = project.conn.execute("SELECT listed FROM nodes WHERE path = ''").fetchone()
         if root_listed and root_listed[0]:
-            self._rescan_then_open(project)
+            self._rescan_then_open(project, source)
         else:
-            self._open_triage(project, None)
+            self._open_triage(project, source, None)
 
-    def _rescan_then_open(self, project: Project) -> None:
+    def _rescan_then_open(self, project: Project, source: FileSource) -> None:
         cancel = CancelToken()
-        source = project.make_source()
         # Read on this (UI) thread: project.settings uses the UI thread's connection.
         retriage_changed = project.settings.retriage_changed
         dialog = ProgressDialog(
@@ -107,12 +168,12 @@ class AppController(QObject):
 
         def done(summary: RescanSummary) -> None:
             dialog.finish()
-            self._open_triage(project, summary)
+            self._open_triage(project, source, summary)
 
         def failed(exc: BaseException) -> None:
             dialog.finish()
             QMessageBox.warning(self.projects_window, "Check failed", f"{exc}")
-            self._open_triage(project, None)
+            self._open_triage(project, source, None)
 
         submit(
             work,
@@ -123,10 +184,12 @@ class AppController(QObject):
         )
         dialog.start()
 
-    def _open_triage(self, project: Project, rescan: RescanSummary | None) -> None:
-        window = TriageWindow(project, self.settings)
+    def _open_triage(
+        self, project: Project, source: FileSource, rescan: RescanSummary | None
+    ) -> None:
+        window = TriageWindow(project, self.settings, source)
         self.triage_windows[project.uuid] = window
-        window.closed.connect(lambda: self._triage_closed(project))
+        window.closed.connect(lambda: self._triage_closed(project, source))
         window.show()
         if rescan is not None:
             message = rescan_message(rescan)
@@ -135,8 +198,9 @@ class AppController(QObject):
             window.notify(message, ms=5000)
         self.projects_window.hide()
 
-    def _triage_closed(self, project: Project) -> None:
+    def _triage_closed(self, project: Project, source: FileSource) -> None:
         self.triage_windows.pop(project.uuid, None)
+        source.close()
         project.close()
         self.projects_window.refresh()
         self.projects_window.show()

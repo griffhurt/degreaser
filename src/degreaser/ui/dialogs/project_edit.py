@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -25,6 +26,8 @@ from PySide6.QtWidgets import (
 from degreaser.core.project import ProjectSettings
 from degreaser.core.rules import validate_pattern
 from degreaser.core.rules.presets import Preset, RuleConfig, RuleKind, presets_for
+from degreaser.core.sources.smb import SmbConfig, connected, normalise_share_path
+from degreaser.ui.controllers.tasks import Task, submit
 
 
 @dataclass
@@ -33,6 +36,8 @@ class ProjectForm:
     source: dict[str, Any]
     settings: ProjectSettings
     rules: RuleConfig = field(default_factory=RuleConfig)
+    # SMB: a password to save in the OS credential store. None leaves the saved one alone.
+    password: str | None = None
 
     @property
     def always_delete(self) -> list[str]:
@@ -53,6 +58,28 @@ def _patterns(edit: QPlainTextEdit) -> list[str]:
     # Keep leading/trailing spaces inside patterns; only drop blank lines.
     lines = edit.toPlainText().split("\n")
     return [line.replace("\\r", "\r") for line in lines if line.strip()]
+
+
+def parse_smb_location(text: str) -> tuple[str, int | None, str, str] | None:
+    """'smb://nas:1445/share/a/b' or '\\\\nas\\share\\a' → (host, port, share, path); None if it's
+    a bare host name."""
+    text = text.strip()
+    if text.startswith("\\\\"):
+        text = "smb://" + text[2:].replace("\\", "/")
+    if not text.lower().startswith("smb://"):
+        return None
+    parts = urlsplit(text)
+    segments = [unquote(p) for p in parts.path.split("/") if p]
+    share = segments[0] if segments else ""
+    return parts.hostname or "", parts.port, share, "/".join(segments[1:])
+
+
+def test_connection(config: SmbConfig, password: str) -> str:
+    """Connect, list the project folder and describe what was found (runs on a worker)."""
+    with connected(config, password) as source:
+        count = len(source.list_dir(""))
+    where = f"/{config.path}" if config.path else "the share"
+    return f"Connected. {count:,} item{'s' if count != 1 else ''} in {where}."
 
 
 class _RuleColumn(QWidget):
@@ -126,29 +153,81 @@ class ProjectEditDialog(QDialog):
         source_layout = QVBoxLayout(source_box)
         type_row = QHBoxLayout()
         self.local_radio = QRadioButton("Local folder")
-        smb_radio = QRadioButton("SMB share")
+        self.smb_radio = QRadioButton("SMB share")
         webdav_radio = QRadioButton("WebDAV")
-        for radio, tip in ((smb_radio, "Coming in milestone 2"), (webdav_radio, "Coming later")):
-            radio.setEnabled(False)
-            radio.setToolTip(tip)
-        self.local_radio.setChecked(True)
+        webdav_radio.setEnabled(False)
+        webdav_radio.setToolTip("Coming later")
+        is_smb = form.source.get("type") == "smb"
+        (self.smb_radio if is_smb else self.local_radio).setChecked(True)
         group = QButtonGroup(self)
-        for radio in (self.local_radio, smb_radio, webdav_radio):
+        for radio in (self.local_radio, self.smb_radio, webdav_radio):
             group.addButton(radio)
             type_row.addWidget(radio)
         type_row.addStretch()
         source_layout.addLayout(type_row)
 
-        path_row = QHBoxLayout()
-        self.path_edit = QLineEdit(form.source.get("path", ""))
+        self.local_page = QWidget()
+        path_row = QHBoxLayout(self.local_page)
+        path_row.setContentsMargins(0, 0, 0, 0)
+        self.path_edit = QLineEdit(form.source.get("path", "") if not is_smb else "")
         self.path_edit.setPlaceholderText("Folder to triage (a mounted share works too)")
         browse = QPushButton("Browse…")
         browse.clicked.connect(self._browse)
         path_row.addWidget(self.path_edit, 1)
         path_row.addWidget(browse)
-        source_layout.addLayout(path_row)
+        source_layout.addWidget(self.local_page)
+
+        self.smb_page = QWidget()
+        smb_form = QFormLayout(self.smb_page)
+        smb_form.setContentsMargins(0, 0, 0, 0)
+        src = form.source if is_smb else {}
+        port = src.get("port")
+        self.host_edit = QLineEdit(src.get("host", "") + (f":{port}" if port else ""))
+        self.host_edit.setPlaceholderText("nas.local, or paste smb://nas/share/folder")
+        self.host_edit.editingFinished.connect(self._split_pasted_location)
+        self.share_edit = QLineEdit(src.get("share", ""))
+        self.share_edit.setPlaceholderText("e.g. backups")
+        self.share_path_edit = QLineEdit(src.get("path", ""))
+        self.share_path_edit.setPlaceholderText("Optional, e.g. Laptops/2014")
+        self.username_edit = QLineEdit(src.get("username", ""))
+        self.password_edit = QLineEdit()
+        self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_edit.setPlaceholderText(
+            "Saved in your system keychain — leave blank to keep it" if is_smb and existing else ""
+        )
+        self.domain_edit = QLineEdit(src.get("domain", ""))
+        self.domain_edit.setPlaceholderText("Optional")
+        smb_form.addRow("Server", self.host_edit)
+        smb_form.addRow("Share", self.share_edit)
+        smb_form.addRow("Folder in share", self.share_path_edit)
+        smb_form.addRow("Username", self.username_edit)
+        smb_form.addRow("Password", self.password_edit)
+        smb_form.addRow("Domain", self.domain_edit)
+        test_row = QHBoxLayout()
+        self.test_button = QPushButton("Test Connection")
+        self.test_button.clicked.connect(self._test_connection)
+        self.test_label = QLabel()
+        self.test_label.setProperty("role", "muted")
+        self.test_label.setWordWrap(True)
+        test_row.addWidget(self.test_button)
+        test_row.addWidget(self.test_label, 1)
+        smb_form.addRow("", test_row)
+        source_layout.addWidget(self.smb_page)
+        for edit in (self.host_edit, self.share_edit, self.share_path_edit, self.username_edit):
+            edit.textEdited.connect(self._connection_changed)
+        for edit in (self.password_edit, self.domain_edit):
+            edit.textEdited.connect(self._connection_changed)
+
+        self._tasks: set[Task] = set()
+        self._verified: SmbConfig | None = None  # last config that passed Test Connection
+        self._accept_after_test = False
+        self._save_anyway = False
+        self.local_radio.toggled.connect(self._source_type_changed)
+        self._source_type_changed()
         if existing:
-            for w in (self.local_radio, self.path_edit, browse):
+            # Where the files are can't change; credentials can (passwords get rotated).
+            locked = [self.local_radio, self.smb_radio, self.path_edit, browse, self.host_edit]
+            for w in [*locked, self.share_edit, self.share_path_edit, self.domain_edit]:
                 w.setEnabled(False)
             note = QLabel("The source can't be changed after a project is created.")
             note.setProperty("role", "faint")
@@ -267,8 +346,9 @@ class ProjectEditDialog(QDialog):
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         save = buttons.button(QDialogButtonBox.StandardButton.Save)
-        if save is not None:
-            save.setProperty("variant", "primary")
+        assert save is not None
+        save.setProperty("variant", "primary")
+        self.save_button = save
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -321,6 +401,106 @@ class ProjectEditDialog(QDialog):
             return self._text_config()
         return self._config_from_checkboxes()
 
+    # Source -----------------------------------------------------------------------------------
+
+    @property
+    def is_smb(self) -> bool:
+        return self.smb_radio.isChecked()
+
+    def _source_type_changed(self) -> None:
+        self.local_page.setVisible(not self.is_smb)
+        self.smb_page.setVisible(self.is_smb)
+
+    def _split_pasted_location(self) -> None:
+        parsed = parse_smb_location(self.host_edit.text())
+        if parsed is None:
+            return
+        host, port, share, path = parsed
+        self.host_edit.setText(host + (f":{port}" if port else ""))
+        if share:
+            self.share_edit.setText(share)
+            self.share_path_edit.setText(path)
+        self._connection_changed()
+
+    def smb_config(self) -> SmbConfig:
+        host, _, port = self.host_edit.text().strip().partition(":")
+        return SmbConfig(
+            host=host.strip(),
+            share=self.share_edit.text().strip().strip("/\\"),
+            path=normalise_share_path(self.share_path_edit.text()),
+            username=self.username_edit.text().strip(),
+            domain=self.domain_edit.text().strip(),
+            port=int(port) if port.strip().isdigit() else 445,
+        )
+
+    def _connection_changed(self) -> None:
+        self._verified = None
+        self._save_anyway = False
+        self.save_button.setText("Save")
+        self.test_label.setText("")
+
+    def _smb_problem(self) -> str | None:
+        config = self.smb_config()
+        if not config.host:
+            return "Enter the server's name or address."
+        if not config.share:
+            return "Enter the share name."
+        if not config.username:
+            return "Enter a username."
+        if not self.password_edit.text() and not self._has_saved_password:
+            return "Enter the password."
+        return None
+
+    @property
+    def _has_saved_password(self) -> bool:
+        return not self.host_edit.isEnabled()  # existing SMB project
+
+    def _test_connection(self) -> None:
+        if problem := self._smb_problem():
+            self._set_test_result(False, problem)
+            return
+        if not self.password_edit.text():
+            self._set_test_result(False, "Enter the password to test the connection.")
+            return
+        config, password = self.smb_config(), self.password_edit.text()
+        self.test_button.setEnabled(False)
+        self.save_button.setEnabled(False)
+        self.test_label.setProperty("role", "muted")
+        self.test_label.setText("Connecting…")
+        self._restyle(self.test_label)
+
+        def done(message: str) -> None:
+            self._verified = config
+            self._set_test_result(True, message)
+            if self._accept_after_test:
+                self._accept_after_test = False
+                self._accept()
+
+        def failed(exc: BaseException) -> None:
+            self._accept_after_test = False
+            self._set_test_result(False, str(exc) or type(exc).__name__)
+            self._save_anyway = True
+            self.save_button.setText("Save Anyway")
+
+        submit(
+            lambda _progress: test_connection(config, password),
+            on_result=done,
+            on_error=failed,
+            keep_alive=self._tasks,
+        )
+
+    def _set_test_result(self, ok: bool, message: str) -> None:
+        self.test_button.setEnabled(True)
+        self.save_button.setEnabled(True)
+        self.test_label.setProperty("role", "success" if ok else "error")
+        self.test_label.setText(message)
+        self._restyle(self.test_label)
+
+    @staticmethod
+    def _restyle(widget: QWidget) -> None:
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
     # Dialog -----------------------------------------------------------------------------------
 
     def _browse(self) -> None:
@@ -334,7 +514,11 @@ class ProjectEditDialog(QDialog):
         if not self.name_edit.text().strip():
             self.error_label.setText("Give the project a name.")
             return
-        if self.path_edit.isEnabled() and not Path(self.path_edit.text()).is_dir():
+        if self.is_smb:
+            if problem := self._smb_problem():
+                self.error_label.setText(problem)
+                return
+        elif self.path_edit.isEnabled() and not Path(self.path_edit.text()).is_dir():
             self.error_label.setText("Choose a folder that exists.")
             return
         config = self.rule_config()
@@ -342,12 +526,25 @@ class ProjectEditDialog(QDialog):
             if error := validate_pattern(pattern):
                 self.error_label.setText(f"Rule “{pattern}”: {error}")
                 return
+        needs_test = self.is_smb and bool(self.password_edit.text())
+        if needs_test and self._verified != self.smb_config() and not self._save_anyway:
+            # New or changed credentials: check them first; Save again to skip the check.
+            self.error_label.setText("")
+            self._accept_after_test = True
+            self._test_connection()
+            return
         self.accept()
 
     def result_form(self) -> ProjectForm:
+        if self.is_smb:
+            source = self.smb_config().to_source()
+            password = self.password_edit.text() or None
+        else:
+            source = {"type": "local", "path": str(Path(self.path_edit.text()).resolve())}
+            password = None
         return ProjectForm(
             name=self.name_edit.text().strip(),
-            source={"type": "local", "path": str(Path(self.path_edit.text()).resolve())},
+            source=source,
             settings=ProjectSettings(
                 jump_back=self.jump_back.isChecked(),
                 retriage_changed=self.retriage.isChecked(),
@@ -356,4 +553,5 @@ class ProjectEditDialog(QDialog):
                 sync_enabled=self.sync.isChecked(),
             ),
             rules=self.rule_config(),
+            password=password,
         )

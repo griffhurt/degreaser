@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from degreaser.core.categories import CategoryStore, Completer, format_category
-from degreaser.core.commit import empty_trash, list_trash_batches
+from degreaser.core.commit import TrashBatch, empty_trash, list_trash_batches
 from degreaser.core.model import Effective, EffectiveState, WalkResult
 from degreaser.core.preview.cache import PreviewCache
 from degreaser.core.preview.metadata import MetaRow
@@ -53,6 +53,7 @@ from degreaser.ui.widgets.icons import STATE_LABELS
 from degreaser.ui.widgets.metadata_table import MetadataTable
 from degreaser.ui.widgets.path_bar import FolderEntry, FolderListing, PathBar
 from degreaser.ui.widgets.toast import Toast
+from degreaser.ui.windows.projects import save_source_changes
 from degreaser.ui.windows.review import ReviewWindow
 
 PATH_BAR_LIMIT = 500
@@ -89,11 +90,14 @@ def describe_state(state: EffectiveState) -> str:
 class TriageWindow(QMainWindow):
     closed = Signal()
 
-    def __init__(self, project: Project, settings: Settings) -> None:
+    def __init__(
+        self, project: Project, settings: Settings, source: FileSource | None = None
+    ) -> None:
         super().__init__()
         self.project = project
         self.app_settings = settings
-        self.source: FileSource = project.make_source()
+        # The opening sequence hands over the connected source; tests build a local one.
+        self.source: FileSource = source or project.make_source()
         self.session = TriageSession(project.conn, settings=project.settings)
         self.keymap = Keymap(settings.keymap)
         self._tasks: set[Task] = set()
@@ -746,7 +750,7 @@ class TriageWindow(QMainWindow):
 
     def commit(self) -> None:
         parent: QWidget = self.review_window if self.review_window else self
-        outcome = start_commit(parent, self.project)
+        outcome = start_commit(parent, self.project, self.source)
         if outcome is None:
             return
         # Deleted paths left the tree and history was cleared: rebuild everything derived.
@@ -775,6 +779,7 @@ class TriageWindow(QMainWindow):
         self.project.save_settings(result.settings)
         self.session.settings = result.settings
         self.project.save_rule_config(result.rules)
+        save_source_changes(self.project, result)
         if (result.always_delete, result.always_keep) != (always_delete, always_keep):
             self.session.reload_rules()
             self._request_walk()
@@ -786,7 +791,16 @@ class TriageWindow(QMainWindow):
         self.setWindowTitle(f"{result.name} — Degreaser")
 
     def empty_trash(self) -> None:
-        batches = list_trash_batches(self.source)
+        source = self.source
+        self._submit(
+            lambda _progress: list_trash_batches(source),
+            on_result=self._confirm_empty_trash,
+            on_error=self._background_error,
+        )
+
+    def _confirm_empty_trash(self, batches: list[TrashBatch]) -> None:
+        if self._closing:
+            return
         if not batches:
             QMessageBox.information(self, "Degreaser trash", "The Degreaser trash is empty.")
             return
@@ -800,9 +814,15 @@ class TriageWindow(QMainWindow):
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
             QMessageBox.StandardButton.Cancel,
         )
-        if answer == QMessageBox.StandardButton.Yes:
-            empty_trash(self.source)
-            self.notify(f"Freed {human_bytes(size)}", ms=4000)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        source = self.source
+        self.notify("Emptying the Degreaser trash…", ms=60_000)
+        self._submit(
+            lambda _progress: empty_trash(source),
+            on_result=lambda _r: self.notify(f"Freed {human_bytes(size)}", ms=4000),
+            on_error=self._background_error,
+        )
 
     # Closing --------------------------------------------------------------------------------
 

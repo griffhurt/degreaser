@@ -31,6 +31,7 @@ class FaultySource:
     def __init__(self, root: Path) -> None:
         self.inner = LocalSource(root)
         self.capabilities = self.inner.capabilities
+        self.parallelism = self.inner.parallelism
         self.fail: dict[tuple[str, str], Exception] = {}
         self.transient: Counter[tuple[str, str]] = Counter()
         self.crash_after_mutations: int | None = None
