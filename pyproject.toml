@@ -1,6 +1,6 @@
 [project]
 name = "degreaser"
-version = "0.0.1"
+version = "0.1.0"
 description = "Triage large file trees (local or SMB): keep, delete, categorise, then commit."
 readme = "README.md"
 license = "MIT"

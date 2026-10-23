@@ -117,6 +117,16 @@ def collect() -> dict[str, Any]:
     except Exception as exc:
         report["errors"].append(f"syntax highlighting: {exc!r}")
 
+    try:
+        from degreaser.updates import probe, public_key
+
+        report["updater"], error = probe()
+        report["update_key"] = bool(public_key())
+        if error:
+            report["errors"].append(error)
+    except Exception as exc:
+        report["errors"].append(f"updater: {exc!r}")
+
     for module in ("smbclient", "pathspec", "puremagic", "charset_normalizer", "keyring", "PIL"):
         try:
             __import__(module)

@@ -2,11 +2,20 @@
 #   uv run --group build pyinstaller packaging/degreaser.spec --noconfirm
 # Output: dist/Degreaser/ (onedir) and, on macOS, dist/Degreaser.app.
 # Onedir keeps Qt/FFmpeg as separate replaceable libraries (LGPL compliance, see docs/architecture.md §9).
+import os
 import sys
+from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 from degreaser import __version__
+from degreaser.updates import public_key
+from degreaser.updates.feed import feed_url
+
+ICONS = Path(SPECPATH) / "icons"  # noqa: F821 (SPECPATH is defined by PyInstaller)
+# Release builds sign while collecting (packaging/macos/sign.sh adds Sparkle afterwards).
+CODESIGN_IDENTITY = os.environ.get("DEGREASER_CODESIGN_IDENTITY") or None
+ENTITLEMENTS = str(Path(SPECPATH) / "macos" / "entitlements.plist") if CODESIGN_IDENTITY else None  # noqa: F821
 
 block_cipher = None
 
@@ -46,8 +55,8 @@ excludes = [
     "tkinter",
 ]
 
-# Fonts (Inter, OFL) and icons (Lucide, ISC), with their licence files.
-datas = collect_data_files("degreaser.ui.assets")
+# Fonts (Inter, OFL) and icons (Lucide, ISC), with their licence files; the update key.
+datas = collect_data_files("degreaser.ui.assets") + collect_data_files("degreaser.updates")
 
 a = Analysis(
     ["entry.py"],
@@ -68,8 +77,9 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    codesign_identity=None,  # signing happens in the release workflow (M3)
-    entitlements_file=None,
+    codesign_identity=CODESIGN_IDENTITY,
+    entitlements_file=ENTITLEMENTS,
+    icon=str(ICONS / ("degreaser.ico" if sys.platform == "win32" else "degreaser.icns")),
 )
 
 coll = COLLECT(exe, a.binaries, a.datas, name="Degreaser")
@@ -80,9 +90,20 @@ if sys.platform == "darwin":
         name="Degreaser.app",
         bundle_identifier="io.github.griffhurt.degreaser",
         version=__version__,
+        icon=str(ICONS / "degreaser.icns"),
+        codesign_identity=CODESIGN_IDENTITY,
+        entitlements_file=ENTITLEMENTS,
         info_plist={
             "CFBundleShortVersionString": __version__,
+            "CFBundleVersion": __version__,
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "14.0",
+            "LSApplicationCategoryType": "public.app-category.utilities",
+            "NSHumanReadableCopyright": "MIT License",
+            # Sparkle (docs/decisions.md D41). Automatic checks are on by default, which also
+            # skips Sparkle's own permission prompt; Preferences turns them off.
+            "SUFeedURL": feed_url("macos"),
+            "SUPublicEDKey": public_key(),
+            "SUEnableAutomaticChecks": True,
         },
     )

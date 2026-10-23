@@ -27,6 +27,7 @@ from degreaser.core.sync import (
 )
 from degreaser.ui.controllers.sync_controller import SyncController
 from degreaser.ui.controllers.tasks import Task, submit
+from degreaser.ui.controllers.update_controller import UpdateController
 from degreaser.ui.dialogs.preferences import PreferencesDialog
 from degreaser.ui.dialogs.progress import ProgressDialog
 from degreaser.ui.theme import theme, theme_override
@@ -86,12 +87,21 @@ class AppController(QObject):
         )
         self.triage_windows: dict[str, TriageWindow] = {}
         self._tasks: set[Task] = set()
+        self.updates = UpdateController(settings, self.projects_window)
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.updates.shutdown)
 
     def show(self) -> None:
         self.projects_window.show()
+        self.updates.start()
 
     def open_preferences(self, parent: QWidget) -> None:
-        dialog = PreferencesDialog(self.settings, parent)
+        dialog = PreferencesDialog(
+            self.settings,
+            parent,
+            check_for_updates=self.updates.check_now if self.updates.available else None,
+        )
         if dialog.exec() != PreferencesDialog.DialogCode.Accepted:
             return
         self.settings.update_from(dialog.result_settings())
@@ -99,6 +109,7 @@ class AppController(QObject):
         app = QApplication.instance()
         if isinstance(app, QApplication):
             theme().set_mode(app, theme_override(self.settings.appearance.theme))
+        self.updates.apply_settings()
         for window in self.triage_windows.values():
             window.apply_preferences()
 

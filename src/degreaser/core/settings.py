@@ -61,6 +61,10 @@ class Appearance:
 @dataclass
 class Updates:
     check_automatically: bool = True
+    # Feed checks (platforms without Sparkle/WinSparkle): when the last automatic check ran,
+    # and a release the user chose "Later" for, which isn't offered again automatically.
+    last_check: float = 0.0
+    dismissed: str = ""
 
 
 @dataclass

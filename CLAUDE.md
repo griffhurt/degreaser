@@ -28,6 +28,8 @@ uv run ruff check . && uv run ruff format --check . && uv run pyright
 uv run --group build pyinstaller packaging/degreaser.spec --noconfirm   # package → dist/
 QT_QPA_PLATFORM=offscreen uv run degreaser --smoke-test                 # self-check (JSON)
 uv run degreaser --smb-probe smb://host/share/folder --username NAME     # read-only server check (JSON)
+uv run python packaging/make_icons.py                                    # re-render app icons from docs/assets/logo.svg
+# Releases: push a vX.Y.Z tag (docs/releasing.md); the workflow creates a draft release.
 
 # Samba test server (127.0.0.1:1445, user/pass degreaser/degreaser, shares: data, bench)
 docker compose -f tests/integration/docker-compose.yml up -d --build --wait
