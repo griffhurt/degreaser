@@ -914,16 +914,17 @@ class TriageWindow(QMainWindow):
             )
             return finder.run(cancel)
 
+        # Callbacks can land after the window closed (and its widgets were deleted).
         def on_progress(p: FindProgress) -> None:
-            if p.total and p.done < p.total:
+            if not self._closing and p.total and p.done < p.total:
                 state = " (paused)" if pause.paused else "…"
                 self.dup_label.setText(f"Finding duplicates{state} {p.done:,} / {p.total:,}")
 
         def done(_summary: FindSummary) -> None:
             self._dup_running = False
-            self.dup_label.setText("")
             if self._closing:
                 return
+            self.dup_label.setText("")
             self.session.reload_duplicates()
             if self.session.tracker.stale:
                 self._request_walk()
@@ -934,8 +935,9 @@ class TriageWindow(QMainWindow):
 
         def failed(exc: BaseException) -> None:
             self._dup_running = False
-            self.dup_label.setText("")
-            self._background_error(exc)
+            if not self._closing:
+                self.dup_label.setText("")
+                self._background_error(exc)
 
         self.dup_label.setText("Finding duplicates…")
         self._submit(work, on_result=done, on_progress=on_progress, on_error=failed)
@@ -1016,7 +1018,8 @@ class TriageWindow(QMainWindow):
             return Indexer(project.new_connection, source, on_progress=progress).run(cancel)
 
         def on_progress(p: IndexProgress) -> None:
-            self.index_label.setText(f"Indexing… {p.dirs_listed:,} folders")
+            if not self._closing:
+                self.index_label.setText(f"Indexing… {p.dirs_listed:,} folders")
 
         def done(summary: IndexSummary) -> None:
             self._indexing = False
