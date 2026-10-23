@@ -22,7 +22,7 @@ class Strategy(StrEnum):
     PDF = "pdf"  # needs the full file
     MEDIA = "media"  # streamed: local path now, loopback media server for SMB (M2)
     DOCUMENT = "document"  # Office/OpenDocument/iWork: range reads of the needed zip parts
-    ZIP_LISTING = "zip_listing"  # range reads of the tail only
+    ARCHIVE_LISTING = "archive_listing"  # range reads of the headers (core/preview/archives.py)
     NONE = "none"  # metadata + Open only
 
 
@@ -80,8 +80,8 @@ def plan_preview(detection: Detection, entry: Entry, limits: Downloads, *, local
             # Only the central directory and a few XML parts are read, with hard caps
             # (core/preview/office.py), so no size prompt is needed.
             return Plan(Strategy.DOCUMENT)
-        case Kind.ZIP:
-            return Plan(Strategy.ZIP_LISTING)
+        case Kind.ZIP | Kind.ARCHIVE:
+            return Plan(Strategy.ARCHIVE_LISTING)
         case Kind.BINARY:
             if size == 0:
                 return Plan(Strategy.NONE)

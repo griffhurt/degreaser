@@ -4,11 +4,8 @@ import codecs
 import io
 import struct
 import threading
-import zipfile
-from dataclasses import dataclass, field
-from datetime import datetime
 
-from degreaser.core.sources.base import Entry, FileSource
+from degreaser.core.sources.base import FileSource
 
 READ_CHUNK = 256 * 1024
 
@@ -161,7 +158,7 @@ def _exif_thumbnail(prefix: bytes) -> bytes | None:
     return None
 
 
-# Zip listing ----------------------------------------------------------------------------------
+# Range reads as a file ---------------------------------------------------------------------------
 
 
 class RangeReader(io.RawIOBase):
@@ -204,67 +201,3 @@ class RangeReader(io.RawIOBase):
         buffer[: len(data)] = data
         self.pos += len(data)
         return len(data)
-
-
-@dataclass(frozen=True, slots=True)
-class ZipEntry:
-    name: str
-    size: int
-    compressed: int
-    modified: datetime | None
-    is_dir: bool
-    encrypted: bool
-
-
-@dataclass(slots=True)
-class ZipListing:
-    entries: list[ZipEntry] = field(default_factory=list)
-    count: int = 0
-    total_uncompressed: int = 0
-    any_encrypted: bool = False
-    truncated: bool = False  # more entries than were kept
-    comment: str = ""
-    bytes_read: int = 0
-
-
-def zip_listing(
-    source: FileSource,
-    rel: str,
-    entry: Entry,
-    cancel: CancelToken | None = None,
-    max_entries: int = 10_000,
-) -> ZipListing:
-    """List a zip from its central directory using range reads (no full download)."""
-    raw = RangeReader(source, rel, entry.size or 0, cancel)
-    # Buffering turns zipfile's many small header reads into a few larger range reads.
-    with (
-        io.BufferedReader(raw, buffer_size=64 * 1024) as buffered,
-        zipfile.ZipFile(buffered) as zf,
-    ):
-        infos = zf.infolist()
-        listing = ZipListing(count=len(infos), comment=zf.comment.decode("utf-8", "replace"))
-        for info in infos:
-            encrypted = bool(info.flag_bits & 0x1)
-            listing.total_uncompressed += info.file_size
-            listing.any_encrypted |= encrypted
-            if len(listing.entries) < max_entries:
-                listing.entries.append(
-                    ZipEntry(
-                        name=info.filename,
-                        size=info.file_size,
-                        compressed=info.compress_size,
-                        modified=_zip_time(info.date_time),
-                        is_dir=info.is_dir(),
-                        encrypted=encrypted,
-                    )
-                )
-        listing.truncated = len(infos) > len(listing.entries)
-    listing.bytes_read = raw.bytes_read
-    return listing
-
-
-def _zip_time(dt: tuple[int, int, int, int, int, int]) -> datetime | None:
-    try:
-        return datetime(*dt)
-    except ValueError:
-        return None

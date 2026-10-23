@@ -14,9 +14,10 @@ from typing import Any
 
 from PIL import ExifTags, Image, UnidentifiedImageError
 
+from degreaser.core.preview.archives import ArchiveListing
 from degreaser.core.preview.containers import ContainerInfo, sniff_container_file
 from degreaser.core.preview.detect import Detection, Kind
-from degreaser.core.preview.loaders import ZipListing, line_endings
+from degreaser.core.preview.loaders import line_endings
 from degreaser.core.sources.base import Entry, FileSource, basename
 
 
@@ -198,12 +199,29 @@ def _dms(value: Any) -> float:
     return d + m / 60 + s / 3600
 
 
-def zip_rows(listing: ZipListing) -> list[MetaRow]:
-    rows = [
-        MetaRow("Archive", "Entries", f"{listing.count:,}"),
-        MetaRow("Archive", "Uncompressed size", format_size(listing.total_uncompressed)),
-        MetaRow("Archive", "Encrypted", "Yes" if listing.any_encrypted else "No"),
+def archive_rows(listing: ArchiveListing) -> list[MetaRow]:
+    rows = [MetaRow("Archive", "Format", listing.format)] if listing.format else []
+    if listing.names_hidden:
+        rows.append(MetaRow("Archive", "Encrypted", "Yes, including file names"))
+        return rows
+    at_least = "at least " if listing.stopped else ""
+    sizes_known = all(e.size is not None or e.is_dir for e in listing.entries)
+    rows += [
+        MetaRow("Archive", "Entries", f"{at_least}{listing.count:,}"),
+        MetaRow(
+            "Archive",
+            "Uncompressed size",
+            at_least + format_size(listing.total_uncompressed) if sizes_known else "—",
+        ),
     ]
+    if listing.stopped:
+        rows.append(MetaRow("Archive", "Listing", f"stopped early: {listing.stopped}"))
+    encrypted = sum(e.encrypted for e in listing.entries)
+    if not encrypted:
+        rows.append(MetaRow("Archive", "Encrypted", "No"))
+    else:
+        files = sum(not e.is_dir for e in listing.entries)
+        rows.append(MetaRow("Archive", "Encrypted", "Yes" if encrypted >= files else "Some files"))
     if listing.comment.strip():
         rows.append(MetaRow("Archive", "Comment", listing.comment.strip()[:200]))
     return rows

@@ -6,17 +6,17 @@ from pathlib import Path
 
 import pytest
 
+from degreaser.core.preview.archives import archive_listing
 from degreaser.core.preview.containers import sniff_container, sniff_container_file
 from degreaser.core.preview.detect import Detection, Kind, detect
-from degreaser.core.preview.loaders import zip_listing
 from degreaser.core.preview.metadata import (
+    archive_rows,
     collect,
     common_rows,
     dimensions,
     format_duration,
     format_size,
     image_rows,
-    zip_rows,
 )
 from degreaser.core.sources.base import Entry
 from degreaser.core.sources.local import LocalSource
@@ -86,13 +86,14 @@ def test_collect_text_and_image(tmp_path: Path) -> None:
             assert by[key] == value
 
 
-def test_zip_rows(tmp_path: Path) -> None:
+def test_archive_rows(tmp_path: Path) -> None:
     with zipfile.ZipFile(tmp_path / "z.zip", "w") as z:
         z.writestr("a", "12345")
         z.comment = b"backup 2009"
     src = LocalSource(tmp_path)
-    by = rows_by_label(zip_rows(zip_listing(src, "z.zip", src.stat("z.zip"))))
+    by = rows_by_label(archive_rows(archive_listing(src, "z.zip", src.stat("z.zip"))))
     assert by == {
+        "Format": "Zip",
         "Entries": "1",
         "Uncompressed size": "5 bytes",
         "Encrypted": "No",

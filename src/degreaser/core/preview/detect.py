@@ -26,6 +26,7 @@ class Kind(StrEnum):
     PDF = "pdf"
     DOCUMENT = "document"  # Office / OpenDocument / iWork: zip-based, confirmed by contents
     ZIP = "zip"
+    ARCHIVE = "archive"  # tar, 7z, rar and compressed files (core/preview/archives.py)
     BINARY = "binary"
 
 
@@ -124,6 +125,14 @@ _add(Kind.ZIP, "Android package", "application/vnd.android.package-archive", "ap
 _add(Kind.ZIP, "Comic book archive", "application/vnd.comicbook+zip", "cbz")
 _add(Kind.ZIP, "Python wheel", "application/zip", "whl")
 _add(Kind.ZIP, "Firefox extension", "application/x-xpinstall", "xpi")
+_add(Kind.ARCHIVE, "Tar archive", "application/x-tar", "tar")
+_add(Kind.ARCHIVE, "7-Zip archive", "application/x-7z-compressed", "7z")
+_add(Kind.ARCHIVE, "RAR archive", "application/vnd.rar", "rar")
+_add(Kind.ARCHIVE, "Comic book archive", "application/vnd.comicbook-rar", "cbr", "cb7", "cbt")
+_add(Kind.ARCHIVE, "Gzip-compressed file", "application/gzip", "gz", "tgz")
+_add(Kind.ARCHIVE, "Bzip2-compressed file", "application/x-bzip2", "bz2", "tbz2", "tbz")
+_add(Kind.ARCHIVE, "XZ-compressed file", "application/x-xz", "xz", "txz")
+_add(Kind.ARCHIVE, "Zstandard-compressed file", "application/zstd", "zst", "tzst")
 
 _add(
     Kind.CODE, "Source code", None,
@@ -154,7 +163,19 @@ _add(Kind.TEXT, "Contact / calendar", None, "vcf", "ics", "eml")
 _TEXT_NAMES = {"readme", "license", "copying", "makefile", "dockerfile", "changelog", "authors"}
 
 # puremagic labels a match by extension; map those onto our kinds.
-_MAGIC_EXT_ALIASES = {"jfif": "jpg", "jpe": "jpg", "fdf": "pdf"}
+_MAGIC_EXT_ALIASES = {
+    "jfif": "jpg",
+    "jpe": "jpg",
+    "fdf": "pdf",
+    "tar.bz2": "bz2",
+    "tar.gz": "gz",
+    "tar.xz": "xz",
+    "bzip2": "bz2",
+    "tb2": "bz2",
+}
+# Compressed streams wrap any format, so an extension naming something else (.svgz, .emz)
+# is trusted over them.
+_WRAPPERS = {"gz", "bz2", "xz", "zst"}
 
 _BOMS: list[tuple[bytes, str]] = [
     (codecs.BOM_UTF32_LE, "utf-32-le"),
@@ -217,6 +238,8 @@ def _by_magic(
             continue
         if mext == ext:
             return known  # the extension agrees with one of the matches: trust it
+        if mext in _WRAPPERS and claimed is not None and claimed[0] not in (Kind.TEXT, Kind.CODE):
+            return claimed if claimed[0] != Kind.ARCHIVE else known
         candidates.append(known)
     if not candidates:
         return None
@@ -331,11 +354,20 @@ def detect_bytes(name: str, head: bytes) -> Detection:
 def _compatible(claimed: tuple[Kind, str | None, str], found: tuple[Kind, str | None, str]) -> bool:
     if claimed == found:
         return True
-    if claimed[0] == found[0] and claimed[0] in (Kind.ZIP, Kind.DOCUMENT, Kind.VIDEO, Kind.AUDIO):
+    if claimed[0] == found[0] and claimed[0] in (
+        Kind.ZIP,
+        Kind.ARCHIVE,
+        Kind.DOCUMENT,
+        Kind.VIDEO,
+        Kind.AUDIO,
+    ):
         # docx-vs-xlsx, mp4-vs-mov, m4a-vs-mp4 and friends share containers.
         return True
     if {claimed[0], found[0]} == {Kind.ZIP, Kind.DOCUMENT}:
         # Office/OpenDocument/iWork files are zips; the document loader checks the contents.
+        return True
+    if {claimed[0], found[0]} == {Kind.ZIP, Kind.ARCHIVE}:
+        # e.g. a .cbr comic that is really a zip: the listing reads either.
         return True
     # Audio-only files in video containers (and vice versa) are fine.
     return {claimed[0], found[0]} == {Kind.AUDIO, Kind.VIDEO}

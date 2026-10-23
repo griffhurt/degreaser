@@ -46,4 +46,7 @@ def test_media_streams_and_zip_lists() -> None:
     huge = entry(50 * 1024**3)
     assert plan_preview(det(Kind.VIDEO), huge, LIMITS, local=False).strategy == Strategy.MEDIA
     assert plan_preview(det(Kind.VIDEO), huge, LIMITS, local=False).confirm is None
-    assert plan_preview(det(Kind.ZIP), huge, LIMITS, local=False).strategy == Strategy.ZIP_LISTING
+    zip_plan = plan_preview(det(Kind.ZIP), huge, LIMITS, local=False)
+    assert zip_plan.strategy == Strategy.ARCHIVE_LISTING
+    archive_plan = plan_preview(det(Kind.ARCHIVE), huge, LIMITS, local=False)
+    assert archive_plan.strategy == Strategy.ARCHIVE_LISTING

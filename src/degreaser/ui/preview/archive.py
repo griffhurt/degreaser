@@ -1,4 +1,4 @@
-"""Zip listing preview (read from the central directory only)."""
+"""Archive listing preview (zip, 7z, RAR, tar, compressed files; core/preview/archives.py)."""
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -10,14 +10,32 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from degreaser.core.preview.loaders import ZipListing
+from degreaser.core.preview.archives import ArchiveListing
 from degreaser.core.preview.metadata import format_size
 
 MAX_ROWS = 5_000
 
 
+def _short_size(n: int) -> str:
+    return format_size(n).split(" (")[0]
+
+
+def _summary(listing: ArchiveListing, shown: int) -> str:
+    at_least = "at least " if listing.stopped else ""
+    parts = [listing.format, f"{at_least}{listing.count:,} entries"]
+    if all(e.size is not None or e.is_dir for e in listing.entries):
+        parts.append(f"{at_least}{_short_size(listing.total_uncompressed)} uncompressed")
+    if shown < listing.count:
+        parts.append(f"first {shown:,} shown")
+    if listing.stopped:
+        parts.append(f"listing stopped: {listing.stopped}")
+    return " · ".join(p for p in parts if p)
+
+
 class ArchiveView(QWidget):
-    def __init__(self, listing: ZipListing, note: str = "", parent: QWidget | None = None) -> None:
+    def __init__(
+        self, listing: ArchiveListing, note: str = "", parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -43,7 +61,7 @@ class ArchiveView(QWidget):
             item = QTreeWidgetItem(
                 [
                     entry.name + (" 🔒" if entry.encrypted else ""),
-                    "" if entry.is_dir else format_size(entry.size).split(" (")[0],
+                    "" if entry.is_dir or entry.size is None else _short_size(entry.size),
                     entry.modified.strftime("%Y-%m-%d %H:%M") if entry.modified else "",
                 ]
             )
@@ -52,11 +70,7 @@ class ArchiveView(QWidget):
         self.table.addTopLevelItems(items)
         layout.addWidget(self.table, 1)
 
-        hidden = listing.count - len(items)
-        summary = f"{listing.count:,} entries · {format_size(listing.total_uncompressed).split(' (')[0]} uncompressed"  # noqa: E501
-        if hidden > 0:
-            summary += f" · first {len(items):,} shown"
-        self.status = QLabel(summary)
+        self.status = QLabel(_summary(listing, len(items)))
         self.status.setContentsMargins(6, 2, 6, 4)
         layout.addWidget(self.status)
 

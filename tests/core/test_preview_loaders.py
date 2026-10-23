@@ -1,7 +1,6 @@
 import codecs
 import io
 import stat
-import zipfile
 from pathlib import Path
 
 import pytest
@@ -15,7 +14,6 @@ from degreaser.core.preview.loaders import (
     exif_thumbnail,
     format_hex,
     line_endings,
-    zip_listing,
 )
 from degreaser.core.sources.local import LocalSource
 from tests.fixtures.preview.helpers import RemoteLikeSource, jpeg_bytes, jpeg_with_exif_thumbnail
@@ -74,32 +72,6 @@ def test_exif_thumbnail_from_prefix_only() -> None:
     assert exif_thumbnail(jpeg_bytes((10, 10))) is None
     assert exif_thumbnail(b"not a jpeg") is None
     assert exif_thumbnail(data[:30]) is None  # truncated mid-segment
-
-
-def test_zip_listing_reads_only_the_tail(tmp_path: Path) -> None:
-    payload = bytes(range(256)) * 8192  # 2 MiB, stored so it really takes space
-    with zipfile.ZipFile(tmp_path / "a.zip", "w", zipfile.ZIP_STORED) as z:
-        z.writestr("big.bin", payload)
-        for i in range(50):
-            z.writestr(f"dir/file{i}.txt", f"hello {i}")
-        z.writestr("dir/", "")
-    src = RemoteLikeSource(tmp_path)
-    listing = zip_listing(src, "a.zip", src.stat("a.zip"))
-    assert listing.count == 52
-    assert listing.total_uncompressed == len(payload) + sum(len(f"hello {i}") for i in range(50))
-    assert not listing.any_encrypted
-    assert any(e.is_dir for e in listing.entries)
-    assert src.bytes_read < 128 * 1024, src.bytes_read
-    assert listing.bytes_read == src.bytes_read
-
-
-def test_zip_listing_truncates_entries(tmp_path: Path) -> None:
-    with zipfile.ZipFile(tmp_path / "many.zip", "w") as z:
-        for i in range(30):
-            z.writestr(f"f{i}", "")
-    src = LocalSource(tmp_path)
-    listing = zip_listing(src, "many.zip", src.stat("many.zip"), max_entries=10)
-    assert (listing.count, len(listing.entries), listing.truncated) == (30, 10, True)
 
 
 def test_cache_returns_local_paths_without_copying(tmp_path: Path) -> None:

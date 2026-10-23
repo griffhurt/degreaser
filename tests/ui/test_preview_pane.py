@@ -170,6 +170,19 @@ def test_zip_listing_and_corrupt_zip_fallback(
     assert isinstance(pane.view, HexView)
 
 
+def test_seven_zip_and_encrypted_rar(qtbot: QtBot, pane: PreviewPane, tmp_path: Path) -> None:
+    fixtures = Path(__file__).parent.parent / "fixtures" / "archives"
+    for name in ("sample-lzma2.7z", "rar5-hpsw.rar"):
+        (tmp_path / name).write_bytes((fixtures / name).read_bytes())
+    src = LocalSource(tmp_path)
+    show(qtbot, pane, src, "sample-lzma2.7z")
+    assert isinstance(pane.view, ArchiveView) and pane.view.table.topLevelItemCount() == 5
+    show(qtbot, pane, src, "rar5-hpsw.rar")  # names encrypted: a message, not an empty table
+    assert isinstance(pane.view, MessageView)
+    rows = {r.label: r.value for r in pane.metadata_rows() if r.group == "Archive"}
+    assert rows == {"Format": "RAR 5", "Encrypted": "Yes, including file names"}
+
+
 def test_audio_wav(qtbot: QtBot, pane: PreviewPane, tmp_path: Path) -> None:
     make_wav(tmp_path / "tone.wav")
     show(qtbot, pane, LocalSource(tmp_path), "tone.wav")

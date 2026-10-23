@@ -15,6 +15,7 @@ from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QStackedLayout, QWidget
 
+from degreaser.core.preview.archives import ArchiveListing, archive_listing
 from degreaser.core.preview.cache import PreviewCache
 from degreaser.core.preview.detect import Detection, Kind, detect
 from degreaser.core.preview.loaders import (
@@ -23,17 +24,16 @@ from degreaser.core.preview.loaders import (
     TextReader,
     exif_thumbnail,
     read_sample,
-    zip_listing,
 )
 from degreaser.core.preview.media_server import MediaServer
 from degreaser.core.preview.metadata import (
     BasicMetadata,
     MetaRow,
+    archive_rows,
     collect,
     common_rows,
     format_size,
     symlink_rows,
-    zip_rows,
 )
 from degreaser.core.preview.office import OfficeDocument, OfficeError, load_office
 from degreaser.core.preview.plan import EXIF_PREFIX, Confirm, Plan, Strategy, plan_preview
@@ -273,8 +273,8 @@ class PreviewPane(QWidget):
                 self._start_media(prepared)
             case Strategy.DOCUMENT:
                 self._start_document(prepared)
-            case Strategy.ZIP_LISTING:
-                self._start_zip(prepared)
+            case Strategy.ARCHIVE_LISTING:
+                self._start_archive(prepared)
             case Strategy.NONE:
                 size = self._entry.size if self._entry else 0
                 if size == 0:
@@ -569,7 +569,7 @@ class PreviewPane(QWidget):
                 MetaRow("Document", "Preview", f"unavailable: {reason}", warning=True)
             )
             self._emit_rows()
-            self._start_zip(
+            self._start_archive(
                 prepared, note=f"No {label} preview: {reason}. Showing the files inside."
             )
 
@@ -579,23 +579,29 @@ class PreviewPane(QWidget):
             lambda e: self._guard(gen, fallback, e),
         )
 
-    def _start_zip(self, prepared: _Prepared, note: str = "") -> None:
+    def _start_archive(self, prepared: _Prepared, note: str = "") -> None:
         source, rel, entry = self._source, self.rel, self._entry
         assert source and rel is not None and entry
         gen, cancel = self._gen, self._cancel
 
         def show(listing: object) -> None:
-            from degreaser.core.preview.loaders import ZipListing
-
-            assert isinstance(listing, ZipListing)
-            self._set_view(ArchiveView(listing, note=note))
-            self._replace_group("Archive", zip_rows(listing))
+            assert isinstance(listing, ArchiveListing)
+            if listing.names_hidden:
+                self._show_message(
+                    f"Encrypted {listing.format} archive",
+                    "Its file names are encrypted too, so its contents can't be listed "
+                    "without the password.",
+                    with_open=True,
+                )
+            else:
+                self._set_view(ArchiveView(listing, note=note))
+            self._replace_group("Archive", archive_rows(listing))
             self._finish_loading()
 
         def fallback(exc: BaseException) -> None:
             if isinstance(exc, Cancelled):
                 return
-            # Not a readable zip after all (truncated, self-extracting, …): show bytes instead.
+            # Not a readable archive after all (truncated, self-extracting, …): show bytes.
             self._rows.append(MetaRow("Archive", "Listing", f"unreadable ({exc})", warning=True))
             self._emit_rows()
             hex_plan = plan_preview(
@@ -606,7 +612,9 @@ class PreviewPane(QWidget):
             )
 
         self.worker.submit(
-            lambda _p: zip_listing(source, rel, entry, cancel),
+            lambda _p: archive_listing(
+                source, rel, entry, cancel, budget=self.limits.auto_load_bytes
+            ),
             lambda r: self._guard(gen, show, r),
             lambda e: self._guard(gen, fallback, e),
         )
