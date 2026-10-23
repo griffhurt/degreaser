@@ -63,6 +63,14 @@ def emptied_dirs(conn: sqlite3.Connection, targets: list[DeleteTarget]) -> list[
     return sorted(emptied, key=lambda p: (-p.count("/"), p))
 
 
+def _duplicate_guard(conn: sqlite3.Connection, keep: str) -> str:
+    """What must still hold for a duplicate to be deleted: the kept copy exists unchanged
+    (size and mtime as hashed) and still has the same content (docs/duplicates.md §5.4)."""
+    row = conn.execute("SELECT size, mtime FROM nodes WHERE path = ?", (keep,)).fetchone()
+    size, mtime = (row["size"], row["mtime"]) if row is not None else (None, None)
+    return json.dumps({"keep": keep, "size": size, "mtime": mtime})
+
+
 def _added_since_marked(conn: sqlite3.Connection, folder: str) -> int:
     """Files found by a rescan inside a folder after it was marked for deletion."""
     decision = conn.execute(
@@ -101,8 +109,9 @@ def plan_commit(
     if any(t.path == "" for t in targets):
         raise ValueError("refusing to delete the project root")
 
-    ops: list[tuple[str, str | None, str | None, int | None, float | None]] = []
+    ops: list[tuple[str, str | None, str | None, int | None, float | None, str | None]] = []
     for t in targets:
+        guard = _duplicate_guard(conn, t.keep_copy) if t.keep_copy else None
         size, mtime = t.size, t.mtime
         if not t.is_dir and (size is None or mtime is None):
             row = conn.execute("SELECT size, mtime FROM nodes WHERE path = ?", (t.path,)).fetchone()
@@ -111,13 +120,14 @@ def plan_commit(
         if t.is_dir:
             size = mtime = None
         if mode == "trash":
-            ops.append(("trash", t.path, f"{trash_root}/{t.path}", size, mtime))
+            ops.append(("trash", t.path, f"{trash_root}/{t.path}", size, mtime, guard))
         else:
-            ops.append(("delete_tree" if t.is_dir else "delete_file", t.path, None, size, mtime))
+            op = "delete_tree" if t.is_dir else "delete_file"
+            ops.append((op, t.path, None, size, mtime, guard))
 
     empties = emptied_dirs(conn, targets) if settings.remove_empty_dirs else []
-    ops += [("rmdir_if_empty", p, None, None, None) for p in empties]
-    ops.append(("write_catalog", None, None, None, None))
+    ops += [("rmdir_if_empty", p, None, None, None, None) for p in empties]
+    ops.append(("write_catalog", None, None, None, None, None))
 
     dir_targets = [t for t in targets if t.is_dir]
     summary = {
@@ -143,7 +153,7 @@ def plan_commit(
         assert commit_id is not None
         conn.executemany(
             "INSERT INTO commit_ops(commit_id, seq, op, path, dest, expect_size, expect_mtime,"
-            " status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
+            " guard, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
             [(commit_id, seq, *op) for seq, op in enumerate(ops)],
         )
         bump_revision(conn)

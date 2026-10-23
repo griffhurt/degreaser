@@ -36,6 +36,10 @@ class ProjectSettings:
     deletion_mode: str = "trash"  # "trash" | "permanent"
     remove_empty_dirs: bool = True
     sync_enabled: bool = True
+    # Duplicates (docs/duplicates.md): files below this size are never hashed, and the
+    # optional rule deletes exact copies of files the user kept.
+    duplicate_min_bytes: int = 1024 * 1024
+    delete_duplicates: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:

@@ -46,6 +46,7 @@ class OpRow:
     expect_mtime: float | None
     status: str
     detail: str | None
+    guard: dict[str, Any] | None = None  # duplicate deletions: the kept copy to re-check
 
 
 def _info(conn: sqlite3.Connection, row: sqlite3.Row) -> CommitInfo:
@@ -105,6 +106,7 @@ def ops(conn: sqlite3.Connection, commit_id: int, status: str | None = None) -> 
             r["expect_mtime"],
             r["status"],
             r["detail"],
+            json.loads(r["guard"]) if r["guard"] else None,
         )
         for r in conn.execute(sql + " ORDER BY seq", args)
     ]

@@ -1014,7 +1014,7 @@ class TriageWindow(QMainWindow):
         result = dialog.result_form()
         self.project.set_meta("name", result.name)
         self.project.save_settings(result.settings)
-        self.session.settings = result.settings
+        self.session.update_settings(result.settings)
         self.project.save_rule_config(result.rules)
         save_source_changes(self.project, result)
         if (result.always_delete, result.always_keep) != (always_delete, always_keep):

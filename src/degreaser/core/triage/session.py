@@ -22,6 +22,7 @@ from degreaser.core.categories.index import CategoryIndex
 from degreaser.core.categories.store import CategoryStore, InvalidCategory
 from degreaser.core.categories.validate import parse_category
 from degreaser.core.db.connection import bump_revision, tx
+from degreaser.core.duplicates.index import DuplicateIndex
 from degreaser.core.model import Category, Effective, EffectiveState, Origin, WalkSummary
 from degreaser.core.project import ProjectSettings
 from degreaser.core.rules.ruleset import RuleSet
@@ -107,6 +108,16 @@ class TagFolderCheck:
         return self.blocked_by is None and (self.delete_marks > 0 or bool(self.conflicting))
 
 
+@dataclass(frozen=True, slots=True)
+class DuplicateInfo:
+    first: str  # the copy to name in the banner
+    copies: dict[str, EffectiveState]  # every other identical file, traversal order
+
+    @property
+    def others(self) -> int:
+        return len(self.copies) - 1
+
+
 class NoCurrentItem(RuntimeError):
     pass
 
@@ -142,6 +153,8 @@ class TriageSession:
         self.tracker = tracker or SummaryTracker()
         self.resolver = Resolver(conn, self.rules, self.store)
         self.traversal = Traversal(conn, self.resolver)
+        self.duplicates = DuplicateIndex.load(conn)
+        self._apply_duplicate_rule()
         self.mode = Mode.NORMAL
         self.current: Item | None = None
         self._cursor: str | None = self._meta("cursor")
@@ -202,6 +215,58 @@ class TriageSession:
         """Call after folders were listed or a rescan changed the tree."""
         self.resolver.invalidate()
         self.refresh_queues()
+
+    # Duplicates -------------------------------------------------------------------------------
+
+    def _apply_duplicate_rule(self) -> None:
+        on = self.settings.delete_duplicates
+        self.resolver.duplicates = self.duplicates if on else None
+
+    @property
+    def duplicate_rule_on(self) -> bool:
+        return self.resolver.duplicates is not None
+
+    def reload_duplicates(self) -> None:
+        """Call when the duplicate search has found more (or after a rescan)."""
+        self.duplicates = DuplicateIndex.load(self.conn)
+        self._apply_duplicate_rule()
+        if self.duplicate_rule_on:
+            self.tracker.mark_stale()  # newly found copies may now be deleted by the rule
+
+    def update_settings(self, settings: ProjectSettings) -> None:
+        """New project settings (from the settings dialog)."""
+        rule_changed = settings.delete_duplicates != self.settings.delete_duplicates
+        self.settings = settings
+        self._apply_duplicate_rule()
+        if rule_changed:
+            self.tracker.mark_stale()
+
+    def duplicate_info(self, path: str) -> DuplicateInfo | None:
+        """The identical copies of a file, with the one to mention first: a kept copy if
+        there is one, else the first in traversal order."""
+        copies = self.duplicates.copies(path)
+        if not copies:
+            return None
+        states = {}
+        for p in copies:
+            try:
+                states[p] = self.resolver.resolve(p)
+            except KeyError:
+                continue
+        if not states:
+            return None
+        kept = [p for p, st in states.items() if st.action is Effective.KEEP]
+        first = kept[0] if kept else next(iter(states))
+        return DuplicateInfo(first, states)
+
+    def _duplicate_ripple(self, path: str) -> list[str]:
+        """Files whose state changes with this one's when the duplicates rule is on."""
+        if not self.duplicate_rule_on:
+            return []
+        out = []
+        for p in self.duplicates.copies(path):
+            out += [p, *self._companions(p)]
+        return out
 
     def reload_rules(self) -> None:
         """Call after the rules editor saved: effective states change retroactively."""
@@ -394,7 +459,7 @@ class TriageSession:
         item = self._require_current()
         path = item.path
         size, mtime = self._size_mtime(path)
-        affected = [path, *self._companions(path)]
+        affected = [path, *self._companions(path), *self._duplicate_ripple(path)]
         before = {p: self.resolver.resolve(p) for p in affected}
         label = f"{verb} {basename(path)}"
         with tx(self.conn):
@@ -453,8 +518,8 @@ class TriageSession:
             if hid is not None:
                 bump_revision(self.conn)
         self._after_changes(rec.changes, undoing=False)
-        if dirs:
-            self.tracker.mark_stale()  # subtree effects: the owner re-walks
+        if dirs or self.duplicate_rule_on:
+            self.tracker.mark_stale()  # subtree / duplicate effects: the owner re-walks
         else:
             for p in affected:
                 self.tracker.apply_file(before[p], self.resolver.resolve(p), self._size(p))
@@ -572,6 +637,8 @@ class TriageSession:
         )
         for p in companions:
             self.tracker.apply_file(before[p], self.resolver.resolve(p), self._size(p))
+        if self.duplicate_rule_on:
+            self.tracker.mark_stale()  # kept files elsewhere may have copies in or out of here
         return hid
 
     # Undo / redo ----------------------------------------------------------------------------
@@ -636,7 +703,7 @@ class TriageSession:
             return None
         self._after_changes(entry.changes, undoing=undoing)
         after = self._scope_summary(scope)
-        if before is None or after is None:
+        if before is None or after is None or self.duplicate_rule_on:
             self.tracker.mark_stale()
         else:
             self.tracker.apply_subtree(before, after)

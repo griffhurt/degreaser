@@ -4,6 +4,8 @@ Precedence for a file F (first match wins):
   1. F or an ancestor folder has a `delete` decision      -> DELETE (direct / folder)
   2. F has a direct decision (keep / skip / deferred)      -> that   (direct)
   3. always-delete rule matches F or an ancestor           -> DELETE (rule)
+  3b. with the duplicates rule on, F is identical to a file the user kept (directly or by
+      folder) and F isn't in a kept folder                 -> DELETE (duplicate)
   4. always-keep rule matches F or an ancestor             -> KEEP   (rule)
   5. nearest ancestor folder decision is `keep`            -> KEEP   (folder)
   6. otherwise                                             -> UNTRIAGED
@@ -13,12 +15,16 @@ A kept file's category is its own, else its nearest categorised ancestor's.
 
 import sqlite3
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from degreaser.core.categories.store import CategoryStore
 from degreaser.core.model import Category, Effective, EffectiveState, Origin
 from degreaser.core.rules.ruleset import ORPHAN_APPLEDOUBLE, RuleMatch, RuleSet
 from degreaser.core.sources.base import basename, parent, subtree_range
 from degreaser.core.triage.order import companion_of, is_appledouble, is_excluded
+
+if TYPE_CHECKING:
+    from degreaser.core.duplicates.index import DuplicateIndex
 
 EXCLUDED_STATE = EffectiveState(Effective.KEEP, Origin.EXCLUDED)
 UNTRIAGED_STATE = EffectiveState(Effective.UNTRIAGED, Origin.NONE)
@@ -142,8 +148,10 @@ def file_state(
     name: str,
     action: str | None,
     own_category: Category | None,
+    kept_copy: str | None = None,
 ) -> EffectiveState:
-    """Effective state of a non-AppleDouble file, given its folder's context."""
+    """Effective state of a non-AppleDouble file, given its folder's context. `kept_copy` is
+    an identical file the user kept, when the delete-duplicates rule is on."""
     if ctx.excluded:
         return EXCLUDED_STATE
     if ctx.deleted_by is not None:
@@ -163,6 +171,9 @@ def file_state(
         return EffectiveState(Effective.DELETE, Origin.RULE, ctx.rule_delete.pattern)
     if (pattern := rules.match_delete(path, name, False)) is not None:
         return EffectiveState(Effective.DELETE, Origin.RULE, pattern)
+    if kept_copy is not None and ctx.kept_by is None:
+        # Beats always-keep rules (a second copy is still redundant), loses to kept folders.
+        return EffectiveState(Effective.DELETE, Origin.DUPLICATE, kept_copy)
     if ctx.rule_keep is not None:
         return EffectiveState(Effective.KEEP, Origin.RULE, ctx.rule_keep.pattern, cat, cat_from)
     if (pattern := rules.match_keep(path, name, False)) is not None:
@@ -205,6 +216,8 @@ class Resolver:
         self.rules = rules
         self.store = store
         self._ctx: dict[str, DirCtx] = {"": ROOT_CTX}
+        # Set when the delete-duplicates rule is on (TriageSession keeps it current).
+        self.duplicates: DuplicateIndex | None = None
 
     def invalidate(self, rules: RuleSet | None = None) -> None:
         if rules is not None:
@@ -229,7 +242,21 @@ class Resolver:
         self._ctx[path] = ctx
         return ctx
 
-    def resolve(self, path: str) -> EffectiveState:
+    def kept_copy(self, path: str) -> str | None:
+        """With the duplicates rule on: an identical file the user kept, directly or by
+        folder. Those keeps never depend on duplicates, so this can't loop."""
+        if self.duplicates is None:
+            return None
+        for other in self.duplicates.copies(path):
+            try:
+                state = self.resolve(other, duplicates=False)
+            except KeyError:
+                continue
+            if state.action is Effective.KEEP and state.origin in (Origin.DIRECT, Origin.FOLDER):
+                return other
+        return None
+
+    def resolve(self, path: str, *, duplicates: bool = True) -> EffectiveState:
         """Effective state of any known node. Raises KeyError if the path isn't in the tree."""
         row = self.conn.execute(
             "SELECT is_dir, kind, name FROM nodes WHERE path = ?", (path,)
@@ -251,7 +278,8 @@ class Resolver:
             )
             companion = self.resolve(companion_path) if exists else None
             return appledouble_state(ctx, path, action, companion_path, companion)
-        return file_state(self.rules, ctx, path, name, action, category)
+        kept = self.kept_copy(path) if duplicates and action is None else None
+        return file_state(self.rules, ctx, path, name, action, category, kept)
 
     def is_untriaged_candidate(self, ctx: DirCtx, path: str, name: str, kind: str) -> bool:
         """For a file with no direct decision in an unpruned folder: is it UNTRIAGED?"""
@@ -260,4 +288,5 @@ class Resolver:
         return (
             self.rules.match_delete(path, name, False) is None
             and self.rules.match_keep(path, name, False) is None
+            and self.kept_copy(path) is None
         )

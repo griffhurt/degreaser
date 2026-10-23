@@ -128,7 +128,24 @@ CREATE TABLE commit_ops (
 CREATE INDEX commit_ops_pending ON commit_ops(commit_id, status, seq);
 """
 
-MIGRATIONS: list[str] = [V1]
+# Duplicate detection (docs/duplicates.md, M2.5): device-local hashes keyed on node id, and a
+# guard on commit ops that delete a file because it duplicates one being kept.
+V2 = """
+CREATE TABLE file_hashes (
+  node_id   INTEGER PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+  size      INTEGER NOT NULL,
+  mtime     REAL,
+  partial   BLOB,          -- BLAKE2b-128 of the first + last 64 KB
+  full      BLOB,          -- BLAKE2b-128 of the whole file; NULL unless partial hashes collided
+  hashed_at REAL NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX file_hashes_partial ON file_hashes(size, partial);
+CREATE INDEX file_hashes_full ON file_hashes(full) WHERE full IS NOT NULL;
+
+ALTER TABLE commit_ops ADD COLUMN guard TEXT;  -- JSON; see core/commit/planner.py
+"""
+
+MIGRATIONS: list[str] = [V1, V2]
 
 LATEST = len(MIGRATIONS)
 

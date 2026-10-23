@@ -17,6 +17,7 @@ from degreaser.core.commit.finish import CommitReport, finish_commit
 from degreaser.core.commit.journal import DELETE_OPS, OpRow, get_commit, ops, set_status
 from degreaser.core.commit.trash import CROSS_DEVICE_HINT, is_cross_device_error
 from degreaser.core.db.connection import bump_revision
+from degreaser.core.duplicates.finder import partial_hash
 from degreaser.core.model import Category
 from degreaser.core.sources.base import FileSource, parent
 from degreaser.core.sources.errors import (
@@ -260,6 +261,8 @@ class CommitRunner:
         verdict = self._verify(op)
         if verdict is not None:
             return verdict
+        if op.guard is not None and (problem := self._check_kept_copy(op)) is not None:
+            return "skipped", problem
         match op.op:
             case "trash":
                 assert op.dest is not None
@@ -273,6 +276,23 @@ class CommitRunner:
             case "delete_tree":
                 self._source.delete_tree(op.path)
         return "done", None
+
+    def _check_kept_copy(self, op: OpRow) -> str | None:
+        """A file deleted as a duplicate goes only if the copy being kept is still there,
+        unchanged, with the same content (compared by first + last 64 KB, which is what
+        stays cheap over SMB; size and mtime cover the rest)."""
+        assert op.guard is not None and op.path is not None
+        keep = op.guard["keep"]
+        try:
+            entry = self._source.stat(keep)
+        except NotFound:
+            return f"duplicate kept: {keep} (the copy being kept) is gone"
+        if entry.size != op.guard["size"] or _differs(entry.mtime, op.guard["mtime"]):
+            return f"duplicate kept: {keep} (the copy being kept) has changed"
+        size = entry.size or 0
+        if partial_hash(self._source, keep, size) != partial_hash(self._source, op.path, size):
+            return f"duplicate kept: its contents no longer match {keep}"
+        return None
 
     def _rmdir_if_empty(self, op: OpRow) -> tuple[str, str | None]:
         assert op.path is not None

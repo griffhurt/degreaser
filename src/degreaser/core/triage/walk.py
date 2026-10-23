@@ -5,6 +5,7 @@ The walk streams `nodes` in id order with decisions and categories pre-loaded in
 don't (e.g. after path rewrites), children are buffered until their parent has been seen.
 """
 
+import json
 import sqlite3
 from collections import defaultdict
 from collections.abc import Callable
@@ -74,6 +75,26 @@ class _Pending:
     mtime: float | None
 
 
+def duplicate_deletions(
+    conn: sqlite3.Connection, rules: RuleSet, store: CategoryStore
+) -> dict[str, str]:
+    """With the project's delete-duplicates rule on: file → the kept copy it duplicates.
+    Empty when the rule is off. (Whether the file itself is decided or in a kept folder is
+    left to file_state.)"""
+    row = conn.execute("SELECT value FROM meta WHERE key = 'settings'").fetchone()
+    if row is None or not json.loads(row[0]).get("delete_duplicates"):
+        return {}
+    from degreaser.core.duplicates.index import DuplicateIndex
+
+    resolver = Resolver(conn, rules, store)
+    resolver.duplicates = DuplicateIndex.load(conn)
+    out = {}
+    for path in resolver.duplicates.by_path:
+        if (kept := resolver.kept_copy(path)) is not None:
+            out[path] = kept
+    return out
+
+
 def walk(
     conn: sqlite3.Connection,
     rules: RuleSet,
@@ -89,6 +110,7 @@ def walk(
     updates). For a subtree walk, figures cover only nodes strictly beneath the folder.
     """
     result = WalkResult()
+    kept_copies = duplicate_deletions(conn, rules, store)
     summary = result.summary
     if subtree:
         lo, hi = subtree + "/", subtree + "0"
@@ -149,13 +171,16 @@ def walk(
         if is_appledouble(name, kind):
             pending.append(_Pending(path, companion_of(path, name), pctx, action, size, mtime))
             return
-        state = file_state(rules, pctx, path, name, action, own_categories.get(path))
+        state = file_state(
+            rules, pctx, path, name, action, own_categories.get(path), kept_copies.get(path)
+        )
         if path in wanted:
             companion_states[path] = state
         count_state(summary, state, size)
         if collect:
             if state.action is Effective.DELETE and not pctx.whole_delete:
-                result.delete_targets.append(DeleteTarget(path, False, size, mtime))
+                keep = state.decided_by if state.origin is Origin.DUPLICATE else None
+                result.delete_targets.append(DeleteTarget(path, False, size, mtime, keep))
             elif state.action is Effective.KEEP and state.category is not None:
                 result.catalog_files[path] = state.category
 
