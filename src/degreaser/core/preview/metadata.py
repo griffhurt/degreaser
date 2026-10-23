@@ -33,7 +33,18 @@ def dimensions(width: int, height: int) -> str:
 
 
 # Display order of groups; unknown groups go last in insertion order.
-GROUP_ORDER = ["File", "Triage", "Text", "Image", "Camera", "Media", "Document", "Archive", "Link"]
+GROUP_ORDER = [
+    "File",
+    "Triage",
+    "Duplicates",
+    "Text",
+    "Image",
+    "Camera",
+    "Media",
+    "Document",
+    "Archive",
+    "Link",
+]
 
 
 def format_size(n: int | None) -> str:

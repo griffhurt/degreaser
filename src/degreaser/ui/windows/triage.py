@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from degreaser.core.categories import CategoryStore, Completer, format_category
 from degreaser.core.commit import TrashBatch, empty_trash, list_trash_batches
+from degreaser.core.duplicates import DuplicateFinder, FindProgress, FindSummary, Pause
 from degreaser.core.model import Effective, EffectiveState, WalkResult
 from degreaser.core.preview.cache import PreviewCache
 from degreaser.core.preview.downloads import DownloadQueue, NotDeferrable, Prepared, Priority
@@ -36,6 +37,7 @@ from degreaser.core.triage.session import (
     ActionResult,
     Advance,
     Banner,
+    DuplicateInfo,
     FolderActionRefused,
     Item,
     Mode,
@@ -90,6 +92,21 @@ def describe_state(state: EffectiveState) -> str:
     return text
 
 
+_COPY_STATE = {
+    Effective.KEEP: "kept",
+    Effective.DELETE: "marked for deletion",
+    Effective.SKIP: "skipped",
+    Effective.DEFERRED: "loading",
+}
+
+
+def duplicate_note(info: DuplicateInfo) -> str:
+    """'Duplicate of Photos/a.jpg and 2 others — kept' for the banner."""
+    others = f" and {info.others:,} other{'s' if info.others != 1 else ''}" if info.others else ""
+    state = _COPY_STATE.get(info.copies[info.first].action)
+    return f"Duplicate of {info.first}{others}" + (f" — {state}" if state else "")
+
+
 class _DownloadEvents(QObject):
     """Carries DownloadQueue callbacks (worker threads) to the UI thread."""
 
@@ -121,6 +138,10 @@ class TriageWindow(QMainWindow):
         self._indexing = False
         self._walk_running = False
         self._pending_tag_folder: str | None = None
+        self._dup_running = False
+        self._dup_restart = False
+        self._dup_cancel = CancelToken()
+        self._dup_pause = Pause()
         self.review_window: ReviewWindow | None = None
         self._closing = False
 
@@ -180,6 +201,9 @@ class TriageWindow(QMainWindow):
         self.download_label.setProperty("role", "faint")
         self.sync_label = QLabel()
         self.sync_label.setProperty("role", "faint")
+        self.dup_label = QLabel()
+        self.dup_label.setProperty("role", "faint")
+        top.addWidget(self.dup_label)
         top.addWidget(self.sync_label)
         top.addWidget(self.mode_label)
         top.addWidget(self.index_label)
@@ -305,6 +329,9 @@ class TriageWindow(QMainWindow):
         project_menu.addSeparator()
         self.settings_action = project_menu.addAction("Project Settings…", self.edit_settings)
         self.empty_trash_action = project_menu.addAction("Empty Degreaser Trash…", self.empty_trash)
+        self.pause_dup_action = project_menu.addAction(
+            "Pause Duplicate Search", self.toggle_duplicate_pause
+        )
         project_menu.addSeparator()
         project_menu.addAction("Close Project", self.close)
 
@@ -370,7 +397,8 @@ class TriageWindow(QMainWindow):
         detail = ""
         if item.banner is Banner.CHANGED and item.previous is not None:
             detail = f"was: {describe_state(item.previous)}"
-        self.banner.show_kind(item.banner, detail)
+        info = self.session.duplicate_info(item.path)
+        self.banner.show_kind(item.banner, detail, duplicate_note(info) if info else "")
         entry = self._entry(item.path)
         self.show_preview(item.path, entry)
         self.show_metadata(item.path, entry)
@@ -393,6 +421,7 @@ class TriageWindow(QMainWindow):
         self.metadata.set_rows(self.preview.metadata_rows() if entry else [])
         self.metadata.set_extra_rows(
             [MetaRow("Triage", label, value) for label, value in self.decision_rows(path)]
+            + self.duplicate_rows(path)
         )
 
     def _metadata_changed(self, rel: str, rows: list[MetaRow]) -> None:
@@ -408,6 +437,16 @@ class TriageWindow(QMainWindow):
             where = "this file" if state.category_from == path else state.category_from
             rows.append(("Category", f"{format_category(state.category)}  (from {where})"))
         return rows
+
+    def duplicate_rows(self, path: str) -> list[MetaRow]:
+        """The Details panel's Duplicates group: every identical copy and its decision."""
+        info = self.session.duplicate_info(path)
+        if info is None:
+            return []
+        return [
+            MetaRow("Duplicates", STATE_LABELS[state.action], copy)
+            for copy, state in info.copies.items()
+        ]
 
     def _show_message(
         self, title: str, body: str = "", *, icon: str = "loader-circle", done: bool = False
@@ -852,6 +891,85 @@ class TriageWindow(QMainWindow):
         else:
             self.download_label.setText("")
 
+    # Duplicate search (docs/duplicates.md §6) -------------------------------------------------
+
+    def _start_duplicate_search(self) -> None:
+        """Hash same-size files at low priority; resumes where it left off."""
+        if self._dup_running or self._closing:
+            return
+        self._dup_running = True
+        self._dup_cancel = CancelToken()
+        cancel, pause = self._dup_cancel, self._dup_pause
+        source, project = self.source, self.project
+        min_size = self.project.settings.duplicate_min_bytes
+
+        def work(progress: Any) -> FindSummary:
+            finder = DuplicateFinder(
+                project.new_connection,
+                source,
+                min_size=min_size,
+                workers=2,
+                on_progress=progress,
+                pause=pause,
+            )
+            return finder.run(cancel)
+
+        def on_progress(p: FindProgress) -> None:
+            if p.total and p.done < p.total:
+                state = " (paused)" if pause.paused else "…"
+                self.dup_label.setText(f"Finding duplicates{state} {p.done:,} / {p.total:,}")
+
+        def done(_summary: FindSummary) -> None:
+            self._dup_running = False
+            self.dup_label.setText("")
+            if self._closing:
+                return
+            self.session.reload_duplicates()
+            if self.session.tracker.stale:
+                self._request_walk()
+            self._refresh_current_details()
+            if self._dup_restart:
+                self._dup_restart = False
+                self._start_duplicate_search()
+
+        def failed(exc: BaseException) -> None:
+            self._dup_running = False
+            self.dup_label.setText("")
+            self._background_error(exc)
+
+        self.dup_label.setText("Finding duplicates…")
+        self._submit(work, on_result=done, on_progress=on_progress, on_error=failed)
+
+    def _restart_duplicate_search(self) -> None:
+        if self._dup_running:
+            self._dup_restart = True
+            self._dup_cancel.cancel()
+        else:
+            self._start_duplicate_search()
+
+    def toggle_duplicate_pause(self) -> None:
+        pause = self._dup_pause
+        if pause.paused:
+            pause.resume()
+            self.pause_dup_action.setText("Pause Duplicate Search")
+        else:
+            pause.pause()
+            self.pause_dup_action.setText("Resume Duplicate Search")
+            if self._dup_running:
+                self.dup_label.setText("Finding duplicates (paused)")
+
+    def _refresh_current_details(self) -> None:
+        """Banner and details for the file on screen, after duplicates or decisions changed."""
+        item = self.session.current
+        if item is None or self.stack.currentIndex() != 0:
+            return
+        detail = ""
+        if item.banner is Banner.CHANGED and item.previous is not None:
+            detail = f"was: {describe_state(item.previous)}"
+        info = self.session.duplicate_info(item.path)
+        self.banner.show_kind(item.banner, detail, duplicate_note(info) if info else "")
+        self.show_metadata(item.path, self._entry(item.path))
+
     # Background work ----------------------------------------------------------------------
 
     def _submit(self, fn: Any, **slots: Any) -> Task:
@@ -908,6 +1026,8 @@ class TriageWindow(QMainWindow):
             self.index_label.setText(text)
             self.session.on_tree_changed()
             self._request_walk()
+            if summary.status == "completed":
+                self._start_duplicate_search()
 
         self._indexing = True
         self.index_label.setText("Indexing…")
@@ -990,6 +1110,7 @@ class TriageWindow(QMainWindow):
         # Deleted paths left the tree and history was cleared: rebuild everything derived.
         self.session.on_tree_changed()
         self.session.refresh_queues()
+        self.session.reload_duplicates()
         self._update_undo_labels()
         self.session.tracker.mark_stale()
         self._request_walk()
@@ -1013,18 +1134,23 @@ class TriageWindow(QMainWindow):
             return
         result = dialog.result_form()
         self.project.set_meta("name", result.name)
+        old_min = self.project.settings.duplicate_min_bytes
         self.project.save_settings(result.settings)
         self.session.update_settings(result.settings)
         self.project.save_rule_config(result.rules)
         save_source_changes(self.project, result)
         if (result.always_delete, result.always_keep) != (always_delete, always_keep):
             self.session.reload_rules()
+        if self.session.tracker.stale:
             self._request_walk()
-            # The current file may now be decided by a rule.
+            # The current file may now be decided by a rule (or as a duplicate).
             if self.session.current is not None and not self.session.traversal.needs_decision(
                 self.session.current.path
             ):
                 self.show_advance(self.session.advance())
+        if result.settings.duplicate_min_bytes != old_min:
+            self._restart_duplicate_search()
+        self._refresh_current_details()
         self.setWindowTitle(f"{result.name} — Degreaser")
 
     def empty_trash(self) -> None:
@@ -1068,6 +1194,8 @@ class TriageWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         self._closing = True
         self._index_cancel.cancel()
+        self._dup_cancel.cancel()
+        self._dup_pause.resume()
         if self.review_window is not None:
             self.review_window.close()
         self.preview.shutdown()

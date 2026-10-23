@@ -99,3 +99,13 @@ def test_cancel_keeps_what_was_hashed(tmp_path: Path) -> None:
     hashed = project.conn.execute("SELECT count(*) FROM file_hashes").fetchone()[0]
     assert 1 <= hashed < 7
     assert run(project, source)[0].status == "completed"
+
+
+def test_pick_copy() -> None:
+    from degreaser.core.duplicates import pick_copy
+
+    group = ["Backups/2014/a.jpg", "a.jpg", "Photos/a.jpg"]
+    mtimes = {"Backups/2014/a.jpg": 100.0, "a.jpg": 300.0, "Photos/a.jpg": 200.0}
+    assert pick_copy(group, "shortest", mtimes) == "a.jpg"
+    assert pick_copy(group, "oldest", mtimes) == "Backups/2014/a.jpg"
+    assert pick_copy(group, "first", mtimes) == "Backups/2014/a.jpg"

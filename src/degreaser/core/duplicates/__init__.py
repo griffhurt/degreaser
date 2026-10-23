@@ -9,9 +9,10 @@ from degreaser.core.duplicates.finder import (
     partial_hash,
     purge_stale,
 )
-from degreaser.core.duplicates.index import DuplicateIndex
+from degreaser.core.duplicates.index import KEEP_RULES, DuplicateIndex, pick_copy
 
 __all__ = [
+    "KEEP_RULES",
     "DuplicateFinder",
     "DuplicateIndex",
     "FindProgress",
@@ -19,5 +20,6 @@ __all__ = [
     "Pause",
     "full_hash",
     "partial_hash",
+    "pick_copy",
     "purge_stale",
 ]

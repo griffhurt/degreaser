@@ -40,6 +40,7 @@ class Banner(StrEnum):
     CHANGED = "changed"  # CHANGED SINCE YOU TRIAGED IT
     LOADED_SKIP = "loaded_skip"  # SKIPPED EARLIER — NOW LOADED
     PREVIOUSLY_SKIPPED = "previously_skipped"  # review-skipped pass
+    DUPLICATE = "duplicate"  # identical to another file (shown by the window, not the session)
 
 
 class Mode(StrEnum):

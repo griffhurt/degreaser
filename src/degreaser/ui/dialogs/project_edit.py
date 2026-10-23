@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -35,6 +36,8 @@ from degreaser.core.sources.smb import (
 )
 from degreaser.core.sync import RemoteState, probe_existing
 from degreaser.ui.controllers.tasks import Task, submit
+
+MB = 1024 * 1024
 
 
 @dataclass
@@ -81,6 +84,13 @@ def test_connection(config: SmbConfig, password: str) -> str:
         count = len(source.list_dir(""))
     where = f"/{config.path}" if config.path else "the share"
     return f"Connected. {count:,} item{'s' if count != 1 else ''} in {where}."
+
+
+class _Megabytes(QDoubleSpinBox):
+    """MB with up to three decimals, shown without trailing zeros ("1 MB", "0.004 MB")."""
+
+    def textFromValue(self, value: float) -> str:
+        return f"{value:g}"
 
 
 class _RuleColumn(QWidget):
@@ -303,6 +313,29 @@ class ProjectEditDialog(QDialog):
             mode_row.addWidget(radio)
         mode_row.addStretch()
         settings_layout.addLayout(mode_row)
+
+        dup_row = QHBoxLayout()
+        dup_row.addWidget(QLabel("Duplicates: ignore files smaller than"))
+        self.dup_min = _Megabytes()
+        self.dup_min.setRange(0.001, 100_000)
+        self.dup_min.setDecimals(3)
+        self.dup_min.setSuffix(" MB")
+        self.dup_min.setValue(s.duplicate_min_bytes / MB)
+        self.dup_min.setToolTip(
+            "Smaller files aren't checked for duplicates. Tiny files are cheap to hash but make "
+            "lots of noisy matches (icons, empty documents)."
+        )
+        dup_row.addWidget(self.dup_min)
+        dup_row.addStretch()
+        settings_layout.addLayout(dup_row)
+        self.delete_duplicates = QCheckBox("Delete exact duplicates of files I've kept")
+        self.delete_duplicates.setChecked(s.delete_duplicates)
+        self.delete_duplicates.setToolTip(
+            "A file identical to one you kept (directly or with Keep/Tag folder) is marked for "
+            "deletion and skipped in triage. It beats always-keep rules but never overrides a "
+            "kept folder or your own decision on that file."
+        )
+        settings_layout.addWidget(self.delete_duplicates)
         layout.addWidget(settings_box)
 
         # Rules: preset checkboxes, or the full lists as text.
@@ -641,6 +674,8 @@ class ProjectEditDialog(QDialog):
                 deletion_mode="permanent" if self.mode_permanent.isChecked() else "trash",
                 remove_empty_dirs=self.remove_empty.isChecked(),
                 sync_enabled=self.sync.isChecked(),
+                duplicate_min_bytes=max(1, round(self.dup_min.value() * MB)),
+                delete_duplicates=self.delete_duplicates.isChecked(),
             ),
             rules=self.rule_config(),
             password=password,

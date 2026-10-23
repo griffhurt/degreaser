@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -21,7 +22,9 @@ from PySide6.QtWidgets import (
 )
 
 from degreaser.core.categories import format_category
+from degreaser.core.duplicates import KEEP_RULES, pick_copy
 from degreaser.core.model import EffectiveState
+from degreaser.core.triage.order import dfs_key
 from degreaser.core.triage.session import TriageSession
 from degreaser.ui.format import human_bytes, human_count
 from degreaser.ui.theme import icon, theme
@@ -56,6 +59,13 @@ FILTERS: dict[str, tuple[str, str]] = {
         "SELECT n.path, n.is_dir, d.action FROM nodes n LEFT JOIN decisions d USING (path)"
         " WHERE n.flag_changed = 1",
     ),
+    # Shown grouped (identical files together), whatever their decisions.
+    "duplicates": (
+        "Duplicates",
+        "SELECT n.path, n.is_dir, d.action FROM file_hashes h JOIN nodes n ON n.id = h.node_id"
+        " LEFT JOIN decisions d USING (path) WHERE h.full IN (SELECT full FROM file_hashes"
+        " WHERE full IS NOT NULL GROUP BY full HAVING count(*) > 1)",
+    ),
 }
 
 COLUMNS = ["Path", "Your decision", "Effective", "Category", "Size", "Modified"]
@@ -80,6 +90,13 @@ class ReviewModel(QAbstractTableModel):
             f"{sql} ORDER BY path LIMIT {ROW_LIMIT + 1}", params
         ).fetchall()
         rows = [(r[0], r[1], r[2]) for r in rows]
+        if filter_id == "duplicates":
+            # Group identical files, groups in traversal order of their first copy.
+            index = self.session.duplicates
+            first = {d: dfs_key(paths[0], False) for d, paths in index.groups.items()}
+            rows.sort(
+                key=lambda r: (first.get(index.digest(r[0]) or b"", ()), dfs_key(r[0], False))
+            )
         if category_prefix:
             prefix = category_prefix.casefold()
             rows = [
@@ -292,6 +309,15 @@ class ReviewWindow(QMainWindow):
             button.clicked.connect(lambda _=False, a=action: self.apply(a))
             footer.addWidget(button)
             self.edit_buttons.append(button)
+        self.keep_one_button = QPushButton("Keep One, Delete the Others…")
+        self.keep_one_button.setIcon(icon("copy", t.text_muted, 15))
+        self.keep_one_button.setToolTip(
+            "For each group of identical files among the selected rows (or all of them), keep "
+            "one copy and mark the rest for deletion"
+        )
+        self.keep_one_button.clicked.connect(self.keep_one_per_group)
+        footer.addWidget(self.keep_one_button)
+        self.edit_buttons.append(self.keep_one_button)
         footer.addStretch()
         commit = QPushButton("Commit…")
         self.commit_button = commit
@@ -303,6 +329,48 @@ class ReviewWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self.reload()
+
+    def keep_one_per_group(self) -> None:
+        """Keep one copy per duplicate group (chosen by a rule) and delete the others."""
+        index = self.session.duplicates
+        paths = self.selected_paths() or [r[0] for r in self.model.rows]
+        digests = list(dict.fromkeys(d for p in paths if (d := index.digest(p)) is not None))
+        if not digests:
+            QMessageBox.information(
+                self, "No duplicates selected", "Select rows from the Duplicates filter first."
+            )
+            return
+        choice = QInputDialog.getItem(
+            self,
+            "Keep one, delete the others",
+            f"{len(digests):,} group(s) of identical files. Which copy should be kept?",
+            list(KEEP_RULES.values()),
+            0,
+            False,
+        )
+        if not choice[1]:
+            return
+        how = next(k for k, v in KEEP_RULES.items() if v == choice[0])
+        keep, delete = [], []
+        for digest in digests:
+            group = index.groups[digest]
+            mtimes = {p: self.model.node(p)[1] for p in group}
+            kept = pick_copy(group, how, mtimes)
+            keep.append(kept)
+            delete += [p for p in group if p != kept]
+        answer = QMessageBox.question(
+            self,
+            "Keep one, delete the others?",
+            f"Keep {len(keep):,} file(s) and mark {len(delete):,} identical copies for deletion?",
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.session.review_set(keep, "keep")
+        self.session.review_set(delete, "delete")
+        self.reload()
+        self.changed.emit()
 
     def reload(self) -> None:
         self.model.load(
@@ -344,8 +412,10 @@ class ReviewWindow(QMainWindow):
         """Another device has the project checked out: look, don't touch."""
         note = "Read-only: another device has this project open"
         for button in self.edit_buttons:
+            if button.property("tip") is None:
+                button.setProperty("tip", button.toolTip())  # restored when editable again
             button.setEnabled(not read_only)
-            button.setToolTip(note if read_only else "Apply to the selected rows")
+            button.setToolTip(note if read_only else button.property("tip"))
         self.commit_button.setEnabled(not read_only)
         self.commit_button.setToolTip(note if read_only else "")
 

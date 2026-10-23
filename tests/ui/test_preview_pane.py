@@ -281,9 +281,20 @@ def test_metadata_table_groups_and_extra_rows(qtbot: QtBot) -> None:
     table = MetadataTable()
     qtbot.addWidget(table)
     table.set_rows([MetaRow("Image", "Dimensions", "4 × 3"), MetaRow("File", "Name", "a.jpg")])
-    table.set_extra_rows([MetaRow("x", "Decision", "Keep (folder)")])
+    table.set_extra_rows(
+        [MetaRow("Duplicates", "Keep", "b/a.jpg"), MetaRow("", "Decision", "Keep (folder)")]
+    )
     headings = [table.topLevelItem(i).text(0) for i in range(table.topLevelItemCount())]  # type: ignore[union-attr]
-    assert headings == ["File", "Name", "Triage", "Decision", "Image", "Dimensions"]
+    assert headings == [
+        "File",
+        "Name",
+        "Triage",
+        "Decision",
+        "Duplicates",
+        "Keep",
+        "Image",
+        "Dimensions",
+    ]
     table.set_rows([MetaRow("File", "Name", "b.jpg")])
     assert table.value("Decision") == "Keep (folder)"
     assert table.value("Name") == "b.jpg"

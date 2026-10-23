@@ -2,6 +2,7 @@
 
 import sqlite3
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from degreaser.core.triage.order import dfs_key
@@ -41,3 +42,26 @@ class DuplicateIndex:
 
     def __len__(self) -> int:
         return len(self.groups)
+
+
+KEEP_RULES = {
+    "shortest": "Shortest path",
+    "oldest": "Oldest modified",
+    "first": "First in traversal order",
+}
+
+
+def pick_copy(paths: list[str], how: str, mtimes: Mapping[str, float | None]) -> str:
+    """Which copy of a group to keep for "Keep one, delete the others" (§5.2).
+
+    `paths` is in traversal order, which also breaks ties."""
+    order = {p: i for i, p in enumerate(paths)}
+    match how:
+        case "shortest":
+            return min(paths, key=lambda p: (len(p), p.count("/"), order[p]))
+        case "oldest":
+            return min(paths, key=lambda p: (mtimes.get(p) or float("inf"), order[p]))
+        case "first":
+            return paths[0]
+        case _:
+            raise ValueError(f"unknown keep rule {how!r}")

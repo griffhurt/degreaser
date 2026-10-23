@@ -36,7 +36,8 @@ class MetadataTable(QTreeWidget):
         self._rebuild()
 
     def set_extra_rows(self, rows: Sequence[MetaRow]) -> None:
-        self._extra = [MetaRow(TRIAGE_GROUP, r.label, r.value, r.warning) for r in rows]
+        # Rows keep their own group (Triage, Duplicates); ungrouped ones go under Triage.
+        self._extra = [MetaRow(r.group or TRIAGE_GROUP, r.label, r.value, r.warning) for r in rows]
         self._rebuild()
 
     def rows(self) -> list[MetaRow]:

@@ -199,3 +199,20 @@ def test_sync_round_trip_over_smb(
     assert sync_on_open(desktop, desktop_project.conn) is OpenOutcome.IN_SYNC
     desktop.release()
     desktop_project.close()
+
+
+def test_duplicate_search_over_smb(project: tuple[Project, SmbSource]) -> None:
+    import os
+
+    from degreaser.core.duplicates import DuplicateFinder, DuplicateIndex
+
+    proj, source = project
+    data = os.urandom(300_000)
+    for rel in ("a/one.bin", "b/two.bin", "c/three.bin"):
+        source.makedirs(rel.rpartition("/")[0])
+        source.write_file_atomic(rel, data)
+    source.write_file_atomic("c/other.bin", os.urandom(300_000))
+    assert Indexer(proj.new_connection, source).run().status == "completed"
+    summary = DuplicateFinder(proj.new_connection, source, min_size=100_000).run()
+    assert summary.status == "completed" and summary.groups == 1
+    assert DuplicateIndex.load(proj.conn).copies("a/one.bin") == ["b/two.bin", "c/three.bin"]
