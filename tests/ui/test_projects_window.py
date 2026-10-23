@@ -99,16 +99,26 @@ def test_dialog_presets_and_text_round_trip(qtbot: QtBot) -> None:
     assert "node_modules/" in config.patterns("always_delete")
     assert "*.heic" in config.patterns("always_keep")
 
-    # Text view shows the flattened lists; edits there flow back into the presets.
+    # Text view shows the flattened lists.
     dialog.text_toggle.setChecked(True)
     text = dialog.delete_rules.toPlainText().splitlines()
     assert ".DS_Store" in text and "node_modules/" in text
+    assert dialog.text_toggle.isEnabled()
+
+    # Anything that isn't an exact set of presets locks the dialog into text mode...
     removed = set(PRESETS_BY_ID["dependencies"].patterns)
-    dialog.delete_rules.setPlainText("\n".join([*(p for p in text if p not in removed), "*.bak"]))
+    pure = [p for p in text if p not in removed]
+    dialog.delete_rules.setPlainText("\n".join([*pure, "*.bak"]))
+    assert not dialog.text_toggle.isEnabled()
+    assert dialog.lock_note.isVisibleTo(dialog)
+    assert dialog.rule_config().custom_delete == ["*.bak"]
+
+    # ...until it matches presets exactly again; then switching back shows the checkboxes.
+    dialog.delete_rules.setPlainText("\n".join(pure))
+    assert dialog.text_toggle.isEnabled()
     dialog.text_toggle.setChecked(False)
     assert dialog.delete_column.selected() == {"system-files"}
-    assert dialog.delete_column.custom == ["*.bak"]
-    assert "1 custom pattern" in dialog.delete_column.custom_label.text()
+    assert dialog.keep_column.selected() == {"photos"}
 
 
 def test_dialog_rejects_invalid_pattern(qtbot: QtBot, tmp_path: Path) -> None:
@@ -129,6 +139,18 @@ def test_text_mode_keeps_carriage_return_patterns(qtbot: QtBot) -> None:
     qtbot.addWidget(dialog)
     dialog.text_toggle.setChecked(True)
     assert "Icon\\r" in dialog.delete_rules.toPlainText()
+    assert dialog.text_toggle.isEnabled()  # still an exact preset match, so not locked
     dialog.text_toggle.setChecked(False)
     assert dialog.delete_column.selected() == {"system-files"}
-    assert dialog.delete_column.custom == []
+
+
+def test_existing_custom_rules_open_locked_in_text_mode(qtbot: QtBot, tmp_path: Path) -> None:
+    from degreaser.core.rules.presets import RuleConfig
+
+    rules = RuleConfig({"system-files"}, custom_delete=["*.bak"])
+    form = ProjectForm("P", {"type": "local", "path": str(tmp_path)}, ProjectSettings(), rules)
+    dialog = ProjectEditDialog(existing=form)
+    qtbot.addWidget(dialog)
+    assert dialog.text_toggle.isChecked() and not dialog.text_toggle.isEnabled()
+    assert "*.bak" in dialog.delete_rules.toPlainText()
+    assert dialog.result_form().rules == rules

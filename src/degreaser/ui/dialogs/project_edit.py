@@ -56,7 +56,8 @@ def _patterns(edit: QPlainTextEdit) -> list[str]:
 
 
 class _RuleColumn(QWidget):
-    """One list (always delete / always keep): preset checkboxes plus a custom-pattern note."""
+    """One list (always delete / always keep) as preset checkboxes. Rules that aren't pure
+    presets are only ever shown as text (see ProjectEditDialog._update_text_lock)."""
 
     def __init__(self, kind: RuleKind, title: str) -> None:
         super().__init__()
@@ -70,12 +71,7 @@ class _RuleColumn(QWidget):
         self.checks: dict[str, QCheckBox] = {}
         for preset in presets_for(kind):
             layout.addWidget(self._row(preset))
-        self.custom_label = QLabel()
-        self.custom_label.setProperty("role", "muted")
-        self.custom_label.setWordWrap(True)
-        layout.addWidget(self.custom_label)
         layout.addStretch()
-        self.custom: list[str] = []
 
     def _row(self, preset: Preset) -> QWidget:
         # Compact rows (checkbox + one short line) so the dialog fits on a laptop screen; the
@@ -100,20 +96,6 @@ class _RuleColumn(QWidget):
     def load(self, config: RuleConfig) -> None:
         for preset_id, check in self.checks.items():
             check.setChecked(preset_id in config.presets)
-        self.custom = list(
-            config.custom_delete if self.kind == "always_delete" else config.custom_keep
-        )
-        if self.custom:
-            count = len(self.custom)
-            self.custom_label.setText(
-                f"+ {count} custom pattern{'' if count == 1 else 's'}: "
-                + ", ".join(self.custom[:6])
-                + ("…" if count > 6 else "")
-            )
-            self.custom_label.setToolTip("\n".join(self.custom))
-        else:
-            self.custom_label.setText("No custom patterns. Use “Edit as text” to add your own.")
-            self.custom_label.setToolTip("")
 
     def selected(self) -> set[str]:
         return {pid for pid, check in self.checks.items() if check.isChecked()}
@@ -236,10 +218,7 @@ class ProjectEditDialog(QDialog):
         text_page = QWidget()
         text_layout = QVBoxLayout(text_page)
         text_layout.setContentsMargins(0, 4, 0, 0)
-        hint = QLabel(
-            "gitignore syntax, one pattern per line. Presets are switched on when all "
-            "of their patterns are present."
-        )
+        hint = QLabel("gitignore syntax, one pattern per line.")
         hint.setProperty("role", "faint")
         hint.setWordWrap(True)
         text_layout.addWidget(hint)
@@ -259,14 +238,26 @@ class ProjectEditDialog(QDialog):
             column.addWidget(edit)
             text_columns.addLayout(column)
         text_layout.addLayout(text_columns, 1)
+        self.lock_note = QLabel(
+            "These rules include patterns that aren't part of a preset, so they can only be "
+            "edited as text. Make them match presets exactly to switch back."
+        )
+        self.lock_note.setProperty("role", "faint")
+        self.lock_note.setWordWrap(True)
+        self.lock_note.hide()
+        text_layout.addWidget(self.lock_note)
+        self.delete_rules.textChanged.connect(self._update_text_lock)
+        self.keep_rules.textChanged.connect(self._update_text_lock)
         self.text_page = text_page
         text_page.hide()
         rules_layout.addWidget(text_page)
         layout.addWidget(rules_box, 1)
 
-        self._config = form.rules
-        self.delete_column.load(self._config)
-        self.keep_column.load(self._config)
+        self.delete_column.load(form.rules)
+        self.keep_column.load(form.rules)
+        if form.rules.custom_delete or form.rules.custom_keep:
+            # Not expressible as presets: open straight into (locked) text mode.
+            self._show_text(form.rules)
 
         self.error_label = QLabel()
         self.error_label.setProperty("role", "error")
@@ -285,31 +276,49 @@ class ProjectEditDialog(QDialog):
     # Rules ------------------------------------------------------------------------------------
 
     def _config_from_checkboxes(self) -> RuleConfig:
-        return RuleConfig(
-            presets=self.delete_column.selected() | self.keep_column.selected(),
-            custom_delete=list(self.delete_column.custom),
-            custom_keep=list(self.keep_column.custom),
-        )
+        return RuleConfig(presets=self.delete_column.selected() | self.keep_column.selected())
+
+    def _text_config(self) -> RuleConfig:
+        return RuleConfig.infer(_patterns(self.delete_rules), _patterns(self.keep_rules))
+
+    def _show_text(self, config: RuleConfig) -> None:
+        self.delete_rules.setPlainText(_to_text(config.patterns("always_delete")))
+        self.keep_rules.setPlainText(_to_text(config.patterns("always_keep")))
+        self.presets_page.hide()
+        self.text_page.show()
+        self.text_toggle.blockSignals(True)
+        self.text_toggle.setChecked(True)
+        self.text_toggle.blockSignals(False)
+        self.text_toggle.setText("Show Presets")
+        self._update_text_lock()
 
     def _toggle_text_mode(self, text: bool) -> None:
         if text:
-            config = self._config_from_checkboxes()
-            self.delete_rules.setPlainText(_to_text(config.patterns("always_delete")))
-            self.keep_rules.setPlainText(_to_text(config.patterns("always_keep")))
-            self.presets_page.hide()
-            self.text_page.show()
-            self.text_toggle.setText("Show Presets")
+            self._show_text(self._config_from_checkboxes())
         else:
-            config = RuleConfig.infer(_patterns(self.delete_rules), _patterns(self.keep_rules))
+            config = self._text_config()
             self.delete_column.load(config)
             self.keep_column.load(config)
             self.text_page.hide()
             self.presets_page.show()
             self.text_toggle.setText("Edit as Text")
 
+    def _update_text_lock(self) -> None:
+        """Rules that aren't an exact set of presets can't be shown as checkboxes, so the
+        dialog stays in text mode until they are."""
+        if not self.text_toggle.isChecked():
+            return
+        config = self._text_config()
+        locked = bool(config.custom_delete or config.custom_keep)
+        self.text_toggle.setEnabled(not locked)
+        self.text_toggle.setToolTip(
+            "Only available when the rules match presets exactly" if locked else ""
+        )
+        self.lock_note.setVisible(locked)
+
     def rule_config(self) -> RuleConfig:
         if self.text_toggle.isChecked():
-            return RuleConfig.infer(_patterns(self.delete_rules), _patterns(self.keep_rules))
+            return self._text_config()
         return self._config_from_checkboxes()
 
     # Dialog -----------------------------------------------------------------------------------
