@@ -26,7 +26,9 @@ from PySide6.QtWidgets import (
 from degreaser.core.project import ProjectSettings
 from degreaser.core.rules import validate_pattern
 from degreaser.core.rules.presets import Preset, RuleConfig, RuleKind, presets_for
-from degreaser.core.sources.smb import SmbConfig, connected, normalise_share_path
+from degreaser.core.sources.local import LocalSource
+from degreaser.core.sources.smb import SmbConfig, SmbSource, connected, normalise_share_path
+from degreaser.core.sync import RemoteState, probe_existing
 from degreaser.ui.controllers.tasks import Task, submit
 
 
@@ -38,6 +40,8 @@ class ProjectForm:
     rules: RuleConfig = field(default_factory=RuleConfig)
     # SMB: a password to save in the OS credential store. None leaves the saved one alone.
     password: str | None = None
+    # Why sync couldn't be used last time (device-local), shown under the sync checkbox.
+    sync_note: str = ""
 
     @property
     def always_delete(self) -> list[str]:
@@ -131,9 +135,20 @@ class _RuleColumn(QWidget):
 class ProjectEditDialog(QDialog):
     """`existing` locks the source (changing it would invalidate the cached tree)."""
 
-    def __init__(self, parent: QWidget | None = None, existing: ProjectForm | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        existing: ProjectForm | None = None,
+        *,
+        adding_existing: bool = False,
+    ) -> None:
+        """`adding_existing`: only ask where the folder is; its name, settings and rules come
+        from the state another device saved there (Add Existing Project)."""
         super().__init__(parent)
-        self.setWindowTitle("Edit Project" if existing else "New Project")
+        self.adding_existing = adding_existing
+        self.found: RemoteState | None = None  # adding_existing: what the folder holds
+        title = "Add Existing Project" if adding_existing else "New Project"
+        self.setWindowTitle("Edit Project" if existing else title)
         self.setMinimumWidth(720)
         form = existing or ProjectForm(
             name="",
@@ -142,11 +157,22 @@ class ProjectEditDialog(QDialog):
         )
         layout = QVBoxLayout(self)
 
-        top = QFormLayout()
+        if adding_existing:
+            intro = QLabel(
+                "Choose a project folder that another computer already syncs Degreaser state "
+                "to (it has a .degreaser/state folder). Its decisions, rules and settings are "
+                "loaded from there."
+            )
+            intro.setWordWrap(True)
+            intro.setProperty("role", "muted")
+            layout.addWidget(intro)
+        name_row = QWidget()
+        top = QFormLayout(name_row)
+        top.setContentsMargins(0, 0, 0, 0)
         self.name_edit = QLineEdit(form.name)
         self.name_edit.setPlaceholderText("e.g. Laptop backups")
         top.addRow("Name", self.name_edit)
-        layout.addLayout(top)
+        layout.addWidget(name_row)
 
         # Source
         source_box = QGroupBox("Source")
@@ -247,9 +273,16 @@ class ProjectEditDialog(QDialog):
         self.jump_back.setToolTip("Only matters for remote sources, where previews can be slow.")
         self.sync = QCheckBox("Sync project state to the project folder")
         self.sync.setChecked(s.sync_enabled)
-        self.sync.setEnabled(False)
-        self.sync.setToolTip("Coming in milestone 2")
-        for w in (self.retriage, self.remove_empty, self.jump_back, self.sync):
+        self.sync.setToolTip(
+            "Saves decisions to .degreaser/state in the project folder so other computers can "
+            "open the project. Only one computer can make decisions at a time."
+        )
+        self.sync_note = QLabel(f"Sync wasn't available last time: {form.sync_note}")
+        self.sync_note.setProperty("role", "faint")
+        self.sync_note.setWordWrap(True)
+        self.sync_note.setContentsMargins(26, 0, 0, 0)
+        self.sync_note.setVisible(bool(form.sync_note))
+        for w in (self.retriage, self.remove_empty, self.jump_back, self.sync, self.sync_note):
             settings_layout.addWidget(w)
 
         mode_row = QHBoxLayout()
@@ -331,6 +364,12 @@ class ProjectEditDialog(QDialog):
         text_page.hide()
         rules_layout.addWidget(text_page)
         layout.addWidget(rules_box, 1)
+        if adding_existing:
+            # Name, settings and rules come from the folder: hidden, but still owned by the
+            # dialog (an unparented box would be deleted along with its widgets).
+            for w in (name_row, settings_box, rules_box):
+                w.hide()
+            layout.addStretch(1)
 
         self.delete_column.load(form.rules)
         self.keep_column.load(form.rules)
@@ -348,6 +387,8 @@ class ProjectEditDialog(QDialog):
         save = buttons.button(QDialogButtonBox.StandardButton.Save)
         assert save is not None
         save.setProperty("variant", "primary")
+        if adding_existing:
+            save.setText("Add")
         self.save_button = save
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
@@ -511,6 +552,9 @@ class ProjectEditDialog(QDialog):
                 self.name_edit.setText(Path(folder).name)
 
     def _accept(self) -> None:
+        if self.adding_existing:
+            self._accept_existing()
+            return
         if not self.name_edit.text().strip():
             self.error_label.setText("Give the project a name.")
             return
@@ -535,6 +579,42 @@ class ProjectEditDialog(QDialog):
             return
         self.accept()
 
+    def _accept_existing(self) -> None:
+        """Check the folder holds a saved project before adding it (on a worker)."""
+        if self.is_smb:
+            if problem := self._smb_problem():
+                self.error_label.setText(problem)
+                return
+            config, password = self.smb_config(), self.password_edit.text()
+            make: Any = lambda: SmbSource(config, password)  # noqa: E731
+        else:
+            folder = Path(self.path_edit.text())
+            if not folder.is_dir():
+                self.error_label.setText("Choose a folder that exists.")
+                return
+            make = lambda: LocalSource(folder)  # noqa: E731
+
+        def probe(_progress: Any) -> RemoteState:
+            source = make()
+            try:
+                source.connect()
+                return probe_existing(source)
+            finally:
+                source.close()
+
+        def found(remote: RemoteState) -> None:
+            self.save_button.setEnabled(True)
+            self.found = remote
+            self.accept()
+
+        def failed(exc: BaseException) -> None:
+            self.save_button.setEnabled(True)
+            self.error_label.setText(str(exc) or type(exc).__name__)
+
+        self.save_button.setEnabled(False)
+        self.error_label.setText("")
+        submit(probe, on_result=found, on_error=failed, keep_alive=self._tasks)
+
     def result_form(self) -> ProjectForm:
         if self.is_smb:
             source = self.smb_config().to_source()
@@ -542,8 +622,11 @@ class ProjectEditDialog(QDialog):
         else:
             source = {"type": "local", "path": str(Path(self.path_edit.text()).resolve())}
             password = None
+        name = self.name_edit.text().strip()
+        if self.adding_existing and self.found is not None:
+            name = self.found.project_name or "Project"
         return ProjectForm(
-            name=self.name_edit.text().strip(),
+            name=name,
             source=source,
             settings=ProjectSettings(
                 jump_back=self.jump_back.isChecked(),

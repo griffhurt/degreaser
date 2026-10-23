@@ -14,7 +14,7 @@ from typing import Any
 
 from degreaser.core.commit.journal import CommitInProgress, find_unfinished_commit
 from degreaser.core.commit.trash import batch_path
-from degreaser.core.db.connection import tx
+from degreaser.core.db.connection import bump_revision, tx
 from degreaser.core.model import DeleteTarget, WalkResult
 from degreaser.core.project import ProjectSettings
 from degreaser.core.sources.base import ancestors, subtree_range
@@ -146,4 +146,5 @@ def plan_commit(
             " status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
             [(commit_id, seq, *op) for seq, op in enumerate(ops)],
         )
+        bump_revision(conn)
     return CommitPlan(commit_id, commit_uuid, summary, len(ops))

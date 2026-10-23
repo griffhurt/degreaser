@@ -279,6 +279,7 @@ class ReviewWindow(QMainWindow):
         self.count_label.setProperty("role", "muted")
         footer.addWidget(self.count_label)
         footer.addSpacing(12)
+        self.edit_buttons: list[QPushButton] = []
         for text, action, icon_name, color in (
             ("Keep", "keep", "check", t.success),
             ("Delete", "delete", "trash-2", t.danger),
@@ -290,8 +291,10 @@ class ReviewWindow(QMainWindow):
             button.setToolTip("Apply to the selected rows")
             button.clicked.connect(lambda _=False, a=action: self.apply(a))
             footer.addWidget(button)
+            self.edit_buttons.append(button)
         footer.addStretch()
         commit = QPushButton("Commit…")
+        self.commit_button = commit
         commit.setProperty("variant", "primary")
         commit.setIcon(icon("git-commit-horizontal", t.accent_text, 16))
         commit.clicked.connect(self.commit_requested.emit)
@@ -337,13 +340,22 @@ class ReviewWindow(QMainWindow):
             f"{human_count(summary.files_untriaged)} untriaged"
         )
 
+    def set_read_only(self, read_only: bool) -> None:
+        """Another device has the project checked out: look, don't touch."""
+        note = "Read-only: another device has this project open"
+        for button in self.edit_buttons:
+            button.setEnabled(not read_only)
+            button.setToolTip(note if read_only else "Apply to the selected rows")
+        self.commit_button.setEnabled(not read_only)
+        self.commit_button.setToolTip(note if read_only else "")
+
     def selected_paths(self) -> list[str]:
         rows = sorted({i.row() for i in self.table.selectionModel().selectedRows()})
         return [self.model.rows[r][0] for r in rows]
 
     def apply(self, action: str | None) -> None:
         paths = self.selected_paths()
-        if not paths:
+        if not paths or not self.commit_button.isEnabled():
             return
         try:
             self.session.review_set(paths, action)

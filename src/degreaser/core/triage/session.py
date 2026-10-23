@@ -21,7 +21,7 @@ from typing import Any
 from degreaser.core.categories.index import CategoryIndex
 from degreaser.core.categories.store import CategoryStore, InvalidCategory
 from degreaser.core.categories.validate import parse_category
-from degreaser.core.db.connection import tx
+from degreaser.core.db.connection import bump_revision, tx
 from degreaser.core.model import Category, Effective, EffectiveState, Origin, WalkSummary
 from degreaser.core.project import ProjectSettings
 from degreaser.core.rules.ruleset import RuleSet
@@ -115,14 +115,6 @@ class FolderActionRefused(RuntimeError):
     def __init__(self, message: str, blocked_by: str | None = None) -> None:
         super().__init__(message)
         self.blocked_by = blocked_by
-
-
-def bump_revision(conn: sqlite3.Connection) -> None:
-    """Every write to synced tables bumps meta.state_revision (docs/data-model.md §2.4)."""
-    conn.execute(
-        "INSERT INTO meta(key, value) VALUES ('state_revision', '1')"
-        " ON CONFLICT(key) DO UPDATE SET value = CAST(meta.value AS INTEGER) + 1"
-    )
 
 
 def sweep_first(conn: sqlite3.Connection) -> str | None:

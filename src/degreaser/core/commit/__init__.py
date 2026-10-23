@@ -13,6 +13,7 @@ from degreaser.core.commit.journal import (
 )
 from degreaser.core.commit.planner import CommitPlan, plan_commit
 from degreaser.core.commit.runner import (
+    Checkpoint,
     CommitProgress,
     CommitRunner,
     RetryState,
@@ -31,6 +32,7 @@ __all__ = [
     "CATALOG_PATH",
     "CROSS_DEVICE_HINT",
     "TRASH_DIR",
+    "Checkpoint",
     "CommitAlreadyStarted",
     "CommitInProgress",
     "CommitInfo",

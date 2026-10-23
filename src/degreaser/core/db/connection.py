@@ -20,6 +20,15 @@ def connect(path: Path | str, *, migrate_schema: bool = True) -> sqlite3.Connect
     return conn
 
 
+def bump_revision(conn: sqlite3.Connection) -> None:
+    """Every write to synced decision state bumps meta.state_revision, which is how sync
+    knows this device has changes to upload (docs/data-model.md §2.4)."""
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES ('state_revision', '1')"
+        " ON CONFLICT(key) DO UPDATE SET value = CAST(meta.value AS INTEGER) + 1"
+    )
+
+
 class tx:
     """Explicit transaction (BEGIN IMMEDIATE) on an autocommit connection: `with tx(conn):`."""
 

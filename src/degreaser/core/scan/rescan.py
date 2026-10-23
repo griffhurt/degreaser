@@ -26,7 +26,7 @@ from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 
-from degreaser.core.db.connection import tx
+from degreaser.core.db.connection import bump_revision, tx
 from degreaser.core.scan.common import (
     CancelToken,
     call_with_retry,
@@ -304,3 +304,4 @@ class Rescanner:
             f"DELETE FROM decisions WHERE {where}", (path, lo, hi)
         ).rowcount
         conn.execute(f"DELETE FROM node_categories WHERE {where}", (path, lo, hi))
+        bump_revision(conn)

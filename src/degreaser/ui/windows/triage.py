@@ -41,6 +41,7 @@ from degreaser.core.triage.session import (
     Mode,
     TriageSession,
 )
+from degreaser.ui.controllers.sync_controller import SyncController
 from degreaser.ui.controllers.tasks import Task, submit
 from degreaser.ui.dialogs.commit import start_commit
 from degreaser.ui.dialogs.project_edit import ProjectEditDialog, ProjectForm
@@ -101,11 +102,16 @@ class TriageWindow(QMainWindow):
     closed = Signal()
 
     def __init__(
-        self, project: Project, settings: Settings, source: FileSource | None = None
+        self,
+        project: Project,
+        settings: Settings,
+        source: FileSource | None = None,
+        sync: SyncController | None = None,
     ) -> None:
         super().__init__()
         self.project = project
         self.app_settings = settings
+        self.sync = sync
         # The opening sequence hands over the connected source; tests build a local one.
         self.source: FileSource = source or project.make_source()
         self.session = TriageSession(project.conn, settings=project.settings)
@@ -125,9 +131,14 @@ class TriageWindow(QMainWindow):
         self._build_shortcuts()
         self.downloads = self._make_downloads()
         self._done_shown = False
+        if sync is not None:
+            sync.status.connect(self.sync_label.setText)
+            sync.lock_lost.connect(self._lock_lost)
 
         self.show_advance(self.session.start())
-        self._resume_deferred()
+        if not self.read_only:
+            self._resume_deferred()
+        self._apply_read_only()
         self._start_indexer()
         self._request_walk()
 
@@ -167,6 +178,9 @@ class TriageWindow(QMainWindow):
         self.index_label.setProperty("role", "faint")
         self.download_label = QLabel()
         self.download_label.setProperty("role", "faint")
+        self.sync_label = QLabel()
+        self.sync_label.setProperty("role", "faint")
+        top.addWidget(self.sync_label)
         top.addWidget(self.mode_label)
         top.addWidget(self.index_label)
         top.addWidget(self.download_label)
@@ -285,10 +299,12 @@ class TriageWindow(QMainWindow):
     def _build_menus(self) -> None:
         project_menu = self.menuBar().addMenu("&Project")
         project_menu.addAction("Review && Commit…", self.open_review)
-        project_menu.addAction("Review Skipped Files", self.start_review_skipped)
+        self.review_skipped_action = project_menu.addAction(
+            "Review Skipped Files", self.start_review_skipped
+        )
         project_menu.addSeparator()
-        project_menu.addAction("Project Settings…", self.edit_settings)
-        project_menu.addAction("Empty Degreaser Trash…", self.empty_trash)
+        self.settings_action = project_menu.addAction("Project Settings…", self.edit_settings)
+        self.empty_trash_action = project_menu.addAction("Empty Degreaser Trash…", self.empty_trash)
         project_menu.addSeparator()
         project_menu.addAction("Close Project", self.close)
 
@@ -347,7 +363,9 @@ class TriageWindow(QMainWindow):
         self._done_shown = False
         self._update_undo_labels()
         self.stack.setCurrentIndex(0)
-        self.action_bar.set_enabled_actions(set(self.action_bar.buttons))
+        self.action_bar.set_enabled_actions(
+            {"open", "expand_preview"} if self.read_only else set(self.action_bar.buttons)
+        )
         self.path_bar.set_path(item.path, root_label=self.project.name)
         detail = ""
         if item.banner is Banner.CHANGED and item.previous is not None:
@@ -356,9 +374,7 @@ class TriageWindow(QMainWindow):
         entry = self._entry(item.path)
         self.show_preview(item.path, entry)
         self.show_metadata(item.path, entry)
-        self.mode_label.setText(
-            "Reviewing skipped files" if self.session.mode is Mode.REVIEW_SKIPPED else ""
-        )
+        self._update_mode_label()
         self._sweep_cache()
         self._prefetch()
 
@@ -421,7 +437,7 @@ class TriageWindow(QMainWindow):
             categorised = human_count(summary.files_categorised)
             detail = f"{files} files ({size}) to delete · {categorised} categorised"
         self._show_message("Nothing left to triage", detail, icon="circle-check", done=True)
-        self.mode_label.setText("")
+        self._update_mode_label()
         self._done_shown = True
 
     def _entry(self, path: str) -> Entry | None:
@@ -464,6 +480,9 @@ class TriageWindow(QMainWindow):
     def trigger(self, action: str) -> None:
         if self.category_input.isVisible() or self.session.current is None:
             return
+        if self.read_only and action not in ("open", "expand_preview"):
+            self._read_only_notice()
+            return
         match action:
             case "keep":
                 self._apply(self.session.keep())
@@ -492,7 +511,7 @@ class TriageWindow(QMainWindow):
         self.show_item(self.session.jump_to(path))
 
     def delete_folder(self, folder: str) -> None:
-        if self.session.current is None:
+        if self.session.current is None or self._refuse_if_read_only():
             return
         check = self.session.check_delete_folder(folder)
         if check.needs_confirmation:
@@ -512,7 +531,7 @@ class TriageWindow(QMainWindow):
         self._after_folder_action()
 
     def tag_folder(self, folder: str) -> None:
-        if self.session.current is None:
+        if self.session.current is None or self._refuse_if_read_only():
             return
         self._pending_tag_folder = folder
         state = self.session.state_of(folder) if folder else None
@@ -535,7 +554,7 @@ class TriageWindow(QMainWindow):
 
     def keep_folder(self, folder: str) -> None:
         """Keep everything in a folder (a tag-folder that leaves its category as it is)."""
-        if self.session.current is None or folder == "":
+        if self.session.current is None or folder == "" or self._refuse_if_read_only():
             return
         state = self.session.state_of(folder)
         own = list(state.category) if state.category and state.category_from == folder else []
@@ -621,7 +640,7 @@ class TriageWindow(QMainWindow):
         self.show_advance(self.session.start_review_skipped())
 
     def undo(self) -> None:
-        if self.category_input.isVisible():
+        if self.category_input.isVisible() or self.read_only:
             return
         item = self.session.undo()
         if item is not None:
@@ -629,7 +648,7 @@ class TriageWindow(QMainWindow):
             self._update_summary()
 
     def redo(self) -> None:
-        if self.category_input.isVisible():
+        if self.category_input.isVisible() or self.read_only:
             return
         self.show_advance(self.session.redo())
 
@@ -639,8 +658,8 @@ class TriageWindow(QMainWindow):
         undo, redo = self.session.undo_label(), self.session.redo_label()
         self.undo_action.setText(f"Undo {undo}" if undo else "Undo")
         self.redo_action.setText(f"Redo {redo}" if redo else "Redo")
-        self.undo_action.setEnabled(undo is not None)
-        self.redo_action.setEnabled(redo is not None)
+        self.undo_action.setEnabled(undo is not None and not self.read_only)
+        self.redo_action.setEnabled(redo is not None and not self.read_only)
 
     def open_current(self) -> None:
         item = self.session.current
@@ -672,6 +691,48 @@ class TriageWindow(QMainWindow):
     def expand_preview(self) -> None:
         if self.session.current is not None and not self.category_input.isVisible():
             self.preview.expand()
+
+    # Read-only (another device has the project checked out) ---------------------------------
+
+    @property
+    def read_only(self) -> bool:
+        return self.sync is not None and self.sync.read_only
+
+    def _apply_read_only(self) -> None:
+        read_only = self.read_only
+        self._update_mode_label()
+        if read_only:
+            self.action_bar.set_enabled_actions({"open", "expand_preview"})
+        for action in (self.settings_action, self.empty_trash_action):
+            action.setEnabled(not read_only)
+        self.review_button.setText("Review" if read_only else "Review && Commit")
+        self._update_undo_labels()
+        if self.review_window is not None:
+            self.review_window.set_read_only(read_only)
+
+    def _update_mode_label(self) -> None:
+        parts = []
+        if self.read_only:
+            holder = self.sync.holder if self.sync and self.sync.holder else "another device"
+            parts.append(f"Read-only · open on {holder}")
+        if self.session.mode is Mode.REVIEW_SKIPPED:
+            parts.append("Reviewing skipped files")
+        self.mode_label.setText(" · ".join(parts))
+
+    def _read_only_notice(self) -> None:
+        holder = self.sync.holder if self.sync and self.sync.holder else "another device"
+        self.notify("Read-only", f"{holder} has this project open")
+
+    def _refuse_if_read_only(self) -> bool:
+        if self.read_only:
+            self._read_only_notice()
+        return self.read_only
+
+    def _lock_lost(self, message: str) -> None:
+        if self._closing:
+            return
+        self._apply_read_only()
+        QMessageBox.warning(self, "Project taken over", message)
 
     # Remote files: prefetch, deferred skips, Open -------------------------------------------
 
@@ -905,6 +966,7 @@ class TriageWindow(QMainWindow):
             self.review_window = ReviewWindow(self.session, self.project.name)
             self.review_window.changed.connect(self._decisions_changed_elsewhere)
             self.review_window.commit_requested.connect(self.commit)
+        self.review_window.set_read_only(self.read_only)
         self.review_window.reload()
         self.review_window.show()
         self.review_window.raise_()
@@ -918,8 +980,11 @@ class TriageWindow(QMainWindow):
             self.show_metadata(item.path, self._entry(item.path))
 
     def commit(self) -> None:
+        if self._refuse_if_read_only():
+            return
         parent: QWidget = self.review_window if self.review_window else self
-        outcome = start_commit(parent, self.project, self.source)
+        checkpoint = self.sync.checkpoint if self.sync else None
+        outcome = start_commit(parent, self.project, self.source, checkpoint)
         if outcome is None:
             return
         # Deleted paths left the tree and history was cleared: rebuild everything derived.
@@ -933,12 +998,15 @@ class TriageWindow(QMainWindow):
         self.show_advance(self.session.advance())
 
     def edit_settings(self) -> None:
+        if self._refuse_if_read_only():
+            return
         always_delete, always_keep = self.project.rules()
         form = ProjectForm(
             self.project.name,
             self.project.source_config,
             self.project.settings,
             self.project.rule_config(),
+            sync_note=self.project.meta("sync_unavailable") or "",
         )
         dialog = ProjectEditDialog(self, existing=form)
         if dialog.exec() != ProjectEditDialog.DialogCode.Accepted:
@@ -960,6 +1028,8 @@ class TriageWindow(QMainWindow):
         self.setWindowTitle(f"{result.name} — Degreaser")
 
     def empty_trash(self) -> None:
+        if self._refuse_if_read_only():
+            return
         source = self.source
         self._submit(
             lambda _progress: list_trash_batches(source),
@@ -1012,5 +1082,7 @@ class TriageWindow(QMainWindow):
                 "last_summary",
                 {**asdict(summary), "files_triaged": summary.files_triaged, "at": time.time()},
             )
+        if self.sync is not None:
+            self.sync.finish(self)
         super().closeEvent(event)
         self.closed.emit()

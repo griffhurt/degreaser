@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -164,3 +165,37 @@ def test_commit_survives_a_dropped_connection(
     batch = plan.summary["trash_batch"]
     for path in ("keep/gone.txt", "junk/j1", "root.txt"):
         assert source.stat(f"{batch}/{path}").kind == "file"
+
+
+def test_sync_round_trip_over_smb(
+    project: tuple[Project, SmbSource], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from degreaser.core.db.connection import bump_revision
+    from degreaser.core.settings import Device
+    from degreaser.core.sync import LockHeld, OpenOutcome, SyncService, sync_on_open
+
+    proj, source = project
+    laptop = SyncService(
+        source, proj.uuid, Device("l", "Laptop"), app_version="t", scratch_dir=tmp_path / "l"
+    )
+    assert sync_on_open(laptop, proj.conn) is OpenOutcome.PUSHED
+    proj.conn.execute(
+        "INSERT INTO decisions(path, is_dir, action, decided_at) VALUES ('root.txt', 0, 'keep', 1)"
+    )
+    bump_revision(proj.conn)
+    laptop.push(proj.conn)
+
+    monkeypatch.setenv("DEGREASER_DATA_DIR", str(tmp_path / "desktop-data"))
+    desktop_project = Project.create("?", proj.source_config, project_uuid=proj.uuid)
+    desktop = SyncService(
+        source, proj.uuid, Device("d", "Desktop"), app_version="t", scratch_dir=tmp_path / "d"
+    )
+    with pytest.raises(LockHeld):
+        sync_on_open(desktop, desktop_project.conn)
+    assert sync_on_open(desktop, desktop_project.conn, read_only=True) is OpenOutcome.PULLED
+    row = desktop_project.conn.execute("SELECT action FROM decisions").fetchone()
+    assert row[0] == "keep"
+    laptop.release()
+    assert sync_on_open(desktop, desktop_project.conn) is OpenOutcome.IN_SYNC
+    desktop.release()
+    desktop_project.close()

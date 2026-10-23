@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from degreaser.core.db.connection import bump_revision
+
 UNFINISHED = ("planned", "running", "paused")
 DELETE_OPS = ("trash", "delete_file", "delete_tree")
 
@@ -114,6 +116,7 @@ def set_status(conn: sqlite3.Connection, commit_id: int, status: str) -> None:
         "UPDATE commits SET status = ?, finished_at = ? WHERE id = ?",
         (status, finished, commit_id),
     )
+    bump_revision(conn)
 
 
 def cancel_planned_commit(conn: sqlite3.Connection, commit_id: int) -> None:

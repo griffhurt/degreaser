@@ -16,6 +16,7 @@ from degreaser.core.commit.catalog import build_catalog, read_catalog, write_cat
 from degreaser.core.commit.finish import CommitReport, finish_commit
 from degreaser.core.commit.journal import DELETE_OPS, OpRow, get_commit, ops, set_status
 from degreaser.core.commit.trash import CROSS_DEVICE_HINT, is_cross_device_error
+from degreaser.core.db.connection import bump_revision
 from degreaser.core.model import Category
 from degreaser.core.sources.base import FileSource, parent
 from degreaser.core.sources.errors import (
@@ -29,6 +30,10 @@ log = logging.getLogger(__name__)
 
 # Called at the write_catalog op: (files, folders) effective categories from a fresh walk.
 CatalogProvider = Callable[[], tuple[dict[str, Category], dict[str, Category]]]
+# Uploads the decision state (sync) from the runner's thread and connection; never raises.
+Checkpoint = Callable[[sqlite3.Connection], None]
+
+CHECKPOINT_EVERY = 500  # ops between sync uploads, so another device can resume (§3.2)
 
 MTIME_TOLERANCE = 1e-6
 
@@ -120,6 +125,7 @@ class CommitRunner:
         on_retry: Callable[[RetryState], None] | None = None,
         wait: Callable[[float, RunControl], None] | None = None,
         max_backoff: float = 60.0,
+        checkpoint: Checkpoint | None = None,
     ) -> None:
         self._conn = conn
         self._source = source
@@ -130,11 +136,20 @@ class CommitRunner:
         self._on_retry = on_retry
         self._wait = wait or (lambda seconds, control: control.wait(seconds))
         self._max_backoff = max_backoff
+        self._checkpoint = checkpoint
 
     # Running ---------------------------------------------------------------------------------
 
     def run(self, control: RunControl | None = None) -> RunOutcome:
-        control = control or RunControl()
+        """Run the pending ops. With a checkpoint, the state is uploaded every
+        CHECKPOINT_EVERY ops and whenever the run stops."""
+        try:
+            return self._run(control or RunControl())
+        finally:
+            if self._checkpoint is not None:
+                self._checkpoint(self._conn)
+
+    def _run(self, control: RunControl) -> RunOutcome:
         info = get_commit(self._conn, self._commit_id)
         if info.status in ("completed", "cancelled"):
             raise ValueError(f"commit {self._commit_id} is already {info.status}")
@@ -168,9 +183,12 @@ class CommitRunner:
                 "UPDATE commit_ops SET status = ?, detail = ?, finished_at = ? WHERE id = ?",
                 (status, detail, time.time(), op.id),
             )
+            bump_revision(self._conn)
             done += 1
             failed += status == "failed"
             skipped += status == "skipped"
+            if self._checkpoint is not None and done % CHECKPOINT_EVERY == 0:
+                self._checkpoint(self._conn)
             self._progress(done, total, failed, skipped, None)
 
         return RunOutcome("completed", finish_commit(self._conn, self._commit_id, "completed"))

@@ -34,6 +34,7 @@ from degreaser.core.commit import (
     plan_commit,
     report_csv,
 )
+from degreaser.core.commit.runner import Checkpoint
 from degreaser.core.model import Category
 from degreaser.core.project import Project
 from degreaser.core.rules import RuleSet
@@ -97,11 +98,13 @@ class CommitRunDialog(QDialog):
         source: FileSource,
         commit_id: int,
         parent: QWidget | None = None,
+        checkpoint: Checkpoint | None = None,
     ) -> None:
         super().__init__(parent)
         self.project = project
         self.source = source
         self.commit_id = commit_id
+        self.checkpoint = checkpoint
         self.control = RunControl()
         self.outcome: RunOutcome | None = None
         self._task: Task | None = None
@@ -167,6 +170,7 @@ class CommitRunDialog(QDialog):
                     catalog_provider=_catalog_provider(project),
                     on_progress=progress,
                     on_retry=progress,
+                    checkpoint=self.checkpoint,
                 )
                 return runner.run(control)
             finally:
@@ -289,7 +293,12 @@ def format_report(report: CommitReport) -> str:
     return "\n".join(lines)
 
 
-def start_commit(parent: QWidget, project: Project, source: FileSource) -> RunOutcome | None:
+def start_commit(
+    parent: QWidget,
+    project: Project,
+    source: FileSource,
+    checkpoint: Checkpoint | None = None,
+) -> RunOutcome | None:
     """Walk + plan on a worker, confirm, then run. Returns the outcome, or None if not run."""
     holder: dict[str, Any] = {}
     progress = ProgressDialog("Preparing commit", "Working out what to delete…", parent=parent)
@@ -338,20 +347,28 @@ def start_commit(parent: QWidget, project: Project, source: FileSource) -> RunOu
         cancel_planned_commit(project.conn, plan.commit_id)
         return None
 
-    return run_commit(parent, project, source, plan.commit_id)
+    return run_commit(parent, project, source, plan.commit_id, checkpoint)
 
 
 def run_commit(
-    parent: QWidget, project: Project, source: FileSource, commit_id: int
+    parent: QWidget,
+    project: Project,
+    source: FileSource,
+    commit_id: int,
+    checkpoint: Checkpoint | None = None,
 ) -> RunOutcome | None:
-    dialog = CommitRunDialog(project, source, commit_id, parent)
+    dialog = CommitRunDialog(project, source, commit_id, parent, checkpoint)
     dialog.start()
     dialog.exec()
     return dialog.outcome
 
 
 def resume_unfinished_commit(
-    parent: QWidget, project: Project, source: FileSource, info: CommitInfo
+    parent: QWidget,
+    project: Project,
+    source: FileSource,
+    info: CommitInfo,
+    checkpoint: Checkpoint | None = None,
 ) -> bool:
     """Offer to resume. True once the commit is resolved and triage may open."""
     box = QMessageBox(parent)
@@ -374,5 +391,5 @@ def resume_unfinished_commit(
         return True
     if clicked is not resume:
         return False
-    outcome = run_commit(parent, project, source, info.id)
+    outcome = run_commit(parent, project, source, info.id, checkpoint)
     return outcome is not None and outcome.status in ("completed", "cancelled")

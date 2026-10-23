@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import IO, Any, Self
 
 from degreaser.core import credentials, paths
-from degreaser.core.db.connection import connect, tx
+from degreaser.core.db.connection import bump_revision, connect, tx
 from degreaser.core.rules.presets import RuleConfig
 from degreaser.core.sources.base import FileSource
 from degreaser.core.sources.errors import AuthenticationFailed, Unsupported
@@ -21,6 +21,9 @@ from degreaser.core.sources.smb import SmbConfig, SmbSource
 
 # Seeded always-delete rules: the default presets (core/rules/presets.py).
 DEFAULT_DELETE_RULES = RuleConfig().patterns("always_delete")
+
+# Project-wide meta that other devices must see: changing it makes the state need a push.
+SYNCED_SETTINGS_KEYS = frozenset({"name", "settings", "rule_config"})
 
 # Degreaser's own folder at the project root; never scanned (D8).
 DEGREASER_DIR = ".degreaser"
@@ -116,6 +119,10 @@ class ProjectInUse(Exception):
     pass
 
 
+class ProjectExists(Exception):
+    pass
+
+
 class WrongThread(RuntimeError):
     pass
 
@@ -147,9 +154,15 @@ class Project:
         name: str,
         source: dict[str, Any],
         settings: ProjectSettings | None = None,
+        *,
+        project_uuid: str | None = None,
     ) -> Self:
-        project_uuid = uuid.uuid4().hex
+        """A new project. `project_uuid` is given when adding a project another device
+        created (its state is then pulled from the project folder)."""
+        project_uuid = project_uuid or uuid.uuid4().hex
         directory = paths.project_dir(project_uuid)
+        if directory.exists():
+            raise ProjectExists(f"this project is already in Degreaser ({project_uuid})")
         directory.mkdir(parents=True)
         conn = connect(paths.project_db_path(project_uuid))
         with tx(conn):
@@ -209,6 +222,8 @@ class Project:
             " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, json.dumps(value)),
         )
+        if key in SYNCED_SETTINGS_KEYS:
+            bump_revision(self.conn)
 
     @property
     def name(self) -> str:
@@ -255,6 +270,7 @@ class Project:
         config = config or RuleConfig.infer(always_delete, always_keep)
         self.set_meta("rule_config", config.to_dict())
         with tx(self.conn):
+            bump_revision(self.conn)
             self.conn.execute("DELETE FROM rules")
             self.conn.executemany(
                 "INSERT INTO rules(kind, pattern, position) VALUES (?, ?, ?)",

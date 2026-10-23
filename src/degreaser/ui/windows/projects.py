@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 from degreaser.core import credentials
 from degreaser.core.project import (
     Project,
+    ProjectExists,
     ProjectInfo,
     ProjectInUse,
     list_projects,
@@ -158,6 +159,12 @@ class ProjectsWindow(QMainWindow):
         self.new_button.setProperty("variant", "primary")
         self.new_button.setIcon(icon("plus", t.accent_text, 16))
         self.new_button.clicked.connect(self._new)
+        self.add_existing_button = QPushButton("Add Existing…")
+        self.add_existing_button.setToolTip(
+            "Add a project another computer created, from its project folder"
+        )
+        self.add_existing_button.clicked.connect(self._add_existing)
+        header.addWidget(self.add_existing_button, 0, Qt.AlignmentFlag.AlignTop)
         header.addWidget(self.new_button, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
 
@@ -253,6 +260,25 @@ class ProjectsWindow(QMainWindow):
         self.refresh()
         self.open_requested.emit(project.uuid)
 
+    def _add_existing(self) -> None:
+        dialog = ProjectEditDialog(self, adding_existing=True)
+        if dialog.exec() != ProjectEditDialog.DialogCode.Accepted or dialog.found is None:
+            return
+        form, remote = dialog.result_form(), dialog.found
+        try:
+            # Same uuid as on the other computer; opening it pulls the saved state.
+            project = Project.create(form.name, form.source, project_uuid=remote.project_uuid)
+        except ProjectExists:
+            QMessageBox.information(
+                self, "Already added", f"“{form.name}” is already in your project list."
+            )
+            return
+        if form.password is not None:
+            credentials.set_password(project.uuid, form.password)
+        project.close()
+        self.refresh()
+        self.open_requested.emit(project.uuid)
+
     def _open(self) -> None:
         if info := self._selected():
             self.open_requested.emit(info.uuid)
@@ -268,7 +294,11 @@ class ProjectsWindow(QMainWindow):
             return
         try:
             form = ProjectForm(
-                project.name, project.source_config, project.settings, project.rule_config()
+                project.name,
+                project.source_config,
+                project.settings,
+                project.rule_config(),
+                sync_note=project.meta("sync_unavailable") or "",
             )
             dialog = ProjectEditDialog(self, existing=form)
             if dialog.exec() == ProjectEditDialog.DialogCode.Accepted:
