@@ -108,3 +108,21 @@ def test_review_rows_show_the_full_path_as_a_tooltip(qtbot: QtBot, root: Path) -
     assert review.table.textElideMode() == QtCore.TextElideMode.ElideMiddle
     review.close()
     window.close()
+
+
+def test_double_click_in_review_opens_the_file_in_triage(qtbot: QtBot, root: Path) -> None:
+    window = open_window(qtbot, root)
+    qtbot.keyClick(window, Qt.Key.Key_K)  # notes.txt
+    window.open_review()
+    review = window.review_window
+    assert review is not None
+    qtbot.addWidget(review)
+    assert window.session.current is not None
+    assert window.session.current.path == "a original/photo.jpg"
+    with qtbot.waitSignal(review.open_requested) as opened:
+        review._open_row(review.model.index(0, 2))  # the kept notes.txt row
+    assert opened.args == ["a original/notes.txt"]
+    assert window.session.current.path == "a original/notes.txt"
+    assert "a original/notes.txt" in window.path_bar._path
+    review.close()
+    window.close()

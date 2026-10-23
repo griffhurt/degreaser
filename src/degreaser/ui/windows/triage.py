@@ -551,6 +551,18 @@ class TriageWindow(QMainWindow):
     def jump_to(self, path: str) -> None:
         self.show_item(self.session.jump_to(path))
 
+    def show_from_review(self, path: str) -> None:
+        """Double-click in the review screen: show that file here and come to the front."""
+        if self.category_input.isVisible():
+            self.category_input.cancel()
+        try:
+            self.jump_to(path)
+        except ValueError:
+            self.notify("That file is no longer in the project")
+            return
+        self.raise_()
+        self.activateWindow()
+
     def delete_folder(self, folder: str) -> None:
         if self.session.current is None or self._refuse_if_read_only():
             return
@@ -1105,6 +1117,7 @@ class TriageWindow(QMainWindow):
             self.review_window = ReviewWindow(self.session, self.project.name)
             self.review_window.changed.connect(self._decisions_changed_elsewhere)
             self.review_window.commit_requested.connect(self.commit)
+            self.review_window.open_requested.connect(self.show_from_review)
         self.review_window.set_read_only(self.read_only)
         self.review_window.reload()
         self.review_window.show()

@@ -123,10 +123,14 @@ class CategoryInput(QFrame):
                 self._submit()
                 return True
             if key == Qt.Key.Key_Escape:
-                self.hide()
-                self.cancelled.emit()
+                self.cancel()
                 return True
         return super().eventFilter(watched, event)
+
+    def cancel(self) -> None:
+        """Close without applying anything (Esc)."""
+        self.hide()
+        self.cancelled.emit()
 
     def _tab(self, backwards: bool) -> None:
         if self._completer is None:

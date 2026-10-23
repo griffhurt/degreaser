@@ -174,7 +174,7 @@ class ReviewModel(QAbstractTableModel):
             return state_icon(state.action, state.origin, bool(state.category))
         if role == Qt.ItemDataRole.ToolTipRole:
             # The full path on every cell: the Path column is often too narrow to show it.
-            full = f"{path}/" if is_dir else path
+            full = f"{path}/" if is_dir else f"{path}\nDouble-click to show it in triage"
             if column == 2 and (decided_by := self.state(path).decided_by):
                 return f"{full}\nDecided by: {decided_by}"
             return full
@@ -216,6 +216,7 @@ class StatChip(QFrame):
 class ReviewWindow(QMainWindow):
     changed = Signal()
     commit_requested = Signal()
+    open_requested = Signal(str)  # a file to show in the triage window (double-click)
 
     def __init__(self, session: TriageSession, project_name: str) -> None:
         super().__init__()
@@ -283,6 +284,7 @@ class ReviewWindow(QMainWindow):
         self.table = QTableView()
         self.table.setModel(self.model)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.doubleClicked.connect(self._open_row)
         self.table.setShowGrid(False)
         # Long paths lose their middle, so both the top folders and the file name stay visible.
         self.table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
@@ -414,6 +416,11 @@ class ReviewWindow(QMainWindow):
             f"{human_count(summary.files_skip)} skipped · "
             f"{human_count(summary.files_untriaged)} untriaged"
         )
+
+    def _open_row(self, index: QModelIndex) -> None:
+        path, is_dir, _action = self.model.rows[index.row()]
+        if not is_dir:
+            self.open_requested.emit(path)
 
     def set_read_only(self, read_only: bool) -> None:
         """Another device has the project checked out: look, don't touch."""
