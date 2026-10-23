@@ -28,6 +28,7 @@ from degreaser.core.sync import (
 from degreaser.ui.controllers.sync_controller import SyncController
 from degreaser.ui.controllers.tasks import Task, submit
 from degreaser.ui.controllers.update_controller import UpdateController
+from degreaser.ui.dialogs.modal import run_modal
 from degreaser.ui.dialogs.preferences import PreferencesDialog
 from degreaser.ui.dialogs.progress import ProgressDialog
 from degreaser.ui.theme import theme, theme_override
@@ -102,7 +103,7 @@ class AppController(QObject):
             parent,
             check_for_updates=self.updates.check_now if self.updates.available else None,
         )
-        if dialog.exec() != PreferencesDialog.DialogCode.Accepted:
+        if not run_modal(dialog):
             return
         self.settings.update_from(dialog.result_settings())
         settings_mod.save(self.settings)

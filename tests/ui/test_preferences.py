@@ -169,3 +169,17 @@ def test_triage_window_has_a_help_menu(qtbot: QtBot, tmp_path: Path) -> None:
     assert isinstance(help_menu, QMenu)
     labels = [a.text() for a in help_menu.actions()]
     assert labels == ["Degreaser User Guide", "Release Notes", "Report a Problem…"]
+
+
+def test_run_modal_deletes_the_dialog(qtbot: QtBot) -> None:
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QWidget
+
+    from degreaser.ui.dialogs.modal import run_modal
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    dialog = PreferencesDialog(Settings(), parent)
+    QTimer.singleShot(0, dialog.reject)
+    with qtbot.waitSignal(dialog.destroyed, timeout=2000):
+        assert run_modal(dialog) is False

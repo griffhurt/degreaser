@@ -41,6 +41,7 @@ from degreaser.core.rules import RuleSet
 from degreaser.core.sources.base import FileSource
 from degreaser.core.triage import full_walk
 from degreaser.ui.controllers.tasks import Task, submit
+from degreaser.ui.dialogs.modal import run_modal
 from degreaser.ui.dialogs.progress import ProgressDialog
 from degreaser.ui.format import human_bytes
 
@@ -323,7 +324,7 @@ def start_commit(
 
     task = submit(work, on_result=done, on_error=failed)
     progress.start()
-    progress.exec()
+    run_modal(progress)
     del task
     if error := holder.get("error"):
         title = "Can't commit yet" if isinstance(error, CommitInProgress) else "Planning failed"
@@ -359,7 +360,7 @@ def run_commit(
 ) -> RunOutcome | None:
     dialog = CommitRunDialog(project, source, commit_id, parent, checkpoint)
     dialog.start()
-    dialog.exec()
+    run_modal(dialog)
     return dialog.outcome
 
 

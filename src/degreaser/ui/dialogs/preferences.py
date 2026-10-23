@@ -168,8 +168,8 @@ def _form(box: QGroupBox) -> QFormLayout:
     return form
 
 
-def _scrolling(page: QWidget) -> QScrollArea:
-    area = QScrollArea()
+def _scrolling(page: QWidget, parent: QWidget) -> QScrollArea:
+    area = QScrollArea(parent)
     area.setWidgetResizable(True)
     area.setFrameShape(QFrame.Shape.NoFrame)
     area.setObjectName("dialogScroll")
@@ -199,10 +199,12 @@ class PreferencesDialog(QDialog):
         outer.setSpacing(14)
         body = QHBoxLayout()
         body.setSpacing(18)
-        self.sidebar = QListWidget()
+        # Explicit parents throughout: widgets PySide thinks Python owns can be freed twice
+        # at interpreter exit (once by Qt, once by PySide's cleanup), crashing on quit.
+        self.sidebar = QListWidget(self)
         self.sidebar.setProperty("variant", "sidebar")
         self.sidebar.setFixedWidth(190)
-        self.pages = QStackedWidget()
+        self.pages = QStackedWidget(self)
         body.addWidget(self.sidebar)
         body.addWidget(self.pages, 1)
         outer.addLayout(body, 1)
@@ -215,7 +217,7 @@ class PreferencesDialog(QDialog):
         ):
             item = QListWidgetItem(icon(icon_name, t.text_muted, 16), title)
             self.sidebar.addItem(item)
-            self.pages.addWidget(_scrolling(page))
+            self.pages.addWidget(_scrolling(page, self.pages))
         self.sidebar.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.sidebar.setCurrentRow(0)
 

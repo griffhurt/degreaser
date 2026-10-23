@@ -25,6 +25,7 @@ from degreaser.core.sync import (
     mark_clean,
 )
 from degreaser.ui.controllers.tasks import Task, submit
+from degreaser.ui.dialogs.modal import run_modal
 from degreaser.ui.dialogs.progress import ProgressDialog
 
 log = logging.getLogger(__name__)
@@ -156,7 +157,7 @@ class SyncController(QObject):
 
         task = submit(work, on_error=failed, on_finished=dialog.finish)
         dialog.start()
-        dialog.exec()
+        run_modal(dialog)
         del task
         if error := holder.get("error"):
             QMessageBox.warning(

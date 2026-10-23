@@ -30,6 +30,7 @@ from degreaser.core.project import (
 )
 from degreaser.core.settings import Settings
 from degreaser.links import USER_GUIDE_URL
+from degreaser.ui.dialogs.modal import run_modal
 from degreaser.ui.dialogs.project_edit import ProjectEditDialog, ProjectForm
 from degreaser.ui.format import human_bytes, relative_time
 from degreaser.ui.theme import icon, pixmap, theme
@@ -291,7 +292,7 @@ class ProjectsWindow(QMainWindow):
 
     def _new(self) -> None:
         dialog = ProjectEditDialog(self, defaults=new_project_settings(self.settings))
-        if dialog.exec() != ProjectEditDialog.DialogCode.Accepted:
+        if not run_modal(dialog):
             return
         form = dialog.result_form()
         project = Project.create(form.name, form.source, form.settings)
@@ -304,7 +305,7 @@ class ProjectsWindow(QMainWindow):
 
     def _add_existing(self) -> None:
         dialog = ProjectEditDialog(self, adding_existing=True)
-        if dialog.exec() != ProjectEditDialog.DialogCode.Accepted or dialog.found is None:
+        if not run_modal(dialog) or dialog.found is None:
             return
         form, remote = dialog.result_form(), dialog.found
         try:
@@ -343,7 +344,7 @@ class ProjectsWindow(QMainWindow):
                 sync_note=project.meta("sync_unavailable") or "",
             )
             dialog = ProjectEditDialog(self, existing=form)
-            if dialog.exec() == ProjectEditDialog.DialogCode.Accepted:
+            if run_modal(dialog):
                 result = dialog.result_form()
                 project.set_meta("name", result.name)
                 project.save_settings(result.settings)

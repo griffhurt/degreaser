@@ -47,6 +47,7 @@ from degreaser.links import ISSUES_URL, RELEASES_URL, USER_GUIDE_URL
 from degreaser.ui.controllers.sync_controller import SyncController
 from degreaser.ui.controllers.tasks import Task, submit
 from degreaser.ui.dialogs.commit import start_commit
+from degreaser.ui.dialogs.modal import run_modal
 from degreaser.ui.dialogs.project_edit import ProjectEditDialog, ProjectForm
 from degreaser.ui.format import human_bytes, human_count
 from degreaser.ui.keymap import Keymap
@@ -1195,7 +1196,7 @@ class TriageWindow(QMainWindow):
             sync_note=self.project.meta("sync_unavailable") or "",
         )
         dialog = ProjectEditDialog(self, existing=form)
-        if dialog.exec() != ProjectEditDialog.DialogCode.Accepted:
+        if not run_modal(dialog):
             return
         result = dialog.result_form()
         self.project.set_meta("name", result.name)
