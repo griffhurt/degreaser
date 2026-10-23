@@ -78,3 +78,54 @@ def test_action_bar_emits(qtbot: QtBot) -> None:
     with qtbot.waitSignal(bar.triggered) as sig:
         bar.buttons["delete_folder"].click()
     assert sig.args == ["delete_folder"]
+
+
+def test_path_bar_collapses_middle_folders_when_narrow(qtbot: QtBot) -> None:
+    bar = PathBar()
+    qtbot.addWidget(bar)
+    path = "Laptop 2014/Users/griff/Documents/School/High School/Senior year/essay.txt"
+    bar.set_path(path, root_label="Backups")
+    bar.resize(2000, 40)
+    bar.show()
+    assert all(s.isVisible() for s in bar.segments) and not bar._ellipsis[1].isVisible()  # type: ignore[index]
+
+    bar.resize(500, 40)
+    visible = [s.text() for s in bar.segments if s.isVisible()]
+    assert visible[0] == "Backups" and visible[-1] == "Senior year"
+    assert len(visible) < len(bar.segments)
+    assert bar._ellipsis[1].isVisible()  # type: ignore[index]
+    # Folders nearest the root go first; the "…" menu lists them.
+    assert bar._hidden[0].text() == "Laptop 2014"
+    assert bar.minimumSizeHint().width() < 500
+
+
+def test_action_bar_goes_compact(qtbot: QtBot) -> None:
+    bar = ActionBar(Keymap(DEFAULT_KEYMAP))
+    qtbot.addWidget(bar)
+    bar.resize(bar.sizeHint().width() + 10, 60)
+    bar.show()
+    keep = bar.buttons["keep"]
+    assert not keep.compact
+    bar.resize(bar.minimumSizeHint().width(), 60)
+    assert keep.compact and keep.toolTip() == "Keep (K)"
+    assert bar.minimumSizeHint().width() < bar.sizeHint().width() * 0.75
+
+
+def test_triage_window_fits_a_small_screen(qtbot: QtBot, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from degreaser.core.project import Project, ProjectSettings
+    from degreaser.core.settings import Settings
+    from degreaser.ui.windows.triage import TriageWindow
+
+    deep = tmp_path / "a" / "b" / "c" / "d" / "e" / "f" / "g" / "h"
+    deep.mkdir(parents=True)
+    (deep / ("a very long file name " * 4 + ".txt")).write_text("x")
+    project = Project.create("Backups", {"type": "local", "path": str(tmp_path / "a")})
+    project.save_settings(ProjectSettings(sync_enabled=False))
+    window = TriageWindow(project, Settings())
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: window.session.current is not None, timeout=5000)
+    window.dup_label.setText("Finding duplicates… 12,408 / 40,112")
+    window.sync_label.setText("Synced at 14:02")
+    assert window.minimumSizeHint().width() <= 900
+    window.close()

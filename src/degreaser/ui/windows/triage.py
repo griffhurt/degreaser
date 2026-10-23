@@ -54,9 +54,11 @@ from degreaser.ui.theme import pixmap, theme
 from degreaser.ui.widgets.action_bar import ActionBar
 from degreaser.ui.widgets.banner import Banner as BannerWidget
 from degreaser.ui.widgets.category_input import CategoryInput
+from degreaser.ui.widgets.elided_label import ElidedLabel
 from degreaser.ui.widgets.icons import STATE_LABELS
 from degreaser.ui.widgets.metadata_table import MetadataTable
 from degreaser.ui.widgets.path_bar import FolderEntry, FolderListing, PathBar
+from degreaser.ui.widgets.screen import fit_to_screen
 from degreaser.ui.widgets.toast import Toast
 from degreaser.ui.windows.projects import save_source_changes
 from degreaser.ui.windows.review import ReviewWindow
@@ -146,7 +148,7 @@ class TriageWindow(QMainWindow):
         self._closing = False
 
         self.setWindowTitle(f"{project.name} — Degreaser")
-        self.resize(1280, 820)
+        fit_to_screen(self, 1280, 820)
         self._build_ui()
         self._build_menus()
         self._build_shortcuts()
@@ -193,15 +195,15 @@ class TriageWindow(QMainWindow):
         self.summary_label.setProperty("role", "muted")
         pill_layout.addWidget(self.summary_label)
         top.addWidget(pill)
-        self.mode_label = QLabel()
+        self.mode_label = ElidedLabel()
         self.mode_label.setProperty("role", "muted")
-        self.index_label = QLabel()
+        self.index_label = ElidedLabel()
         self.index_label.setProperty("role", "faint")
-        self.download_label = QLabel()
+        self.download_label = ElidedLabel()
         self.download_label.setProperty("role", "faint")
-        self.sync_label = QLabel()
+        self.sync_label = ElidedLabel()
         self.sync_label.setProperty("role", "faint")
-        self.dup_label = QLabel()
+        self.dup_label = ElidedLabel()
         self.dup_label.setProperty("role", "faint")
         top.addWidget(self.dup_label)
         top.addWidget(self.sync_label)

@@ -33,6 +33,7 @@ class KeyButton(QAbstractButton):
         self.icon_name = icon_name
         self.tone = tone
         self.key = ""
+        self.compact = False  # icon + key cap only (narrow windows); the label moves to the tooltip
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -58,10 +59,19 @@ class KeyButton(QAbstractButton):
         font.setWeight(QFont.Weight.Medium)
         return font
 
-    def sizeHint(self) -> QSize:
-        label_w = QFontMetrics(self._label_font()).horizontalAdvance(self.label)
+    def set_compact(self, compact: bool) -> None:
+        if compact != self.compact:
+            self.compact = compact
+            self.setToolTip(f"{self.label} ({self.key})" if compact else "")
+            self.updateGeometry()
+            self.update()
+
+    def sizeHint(self, *, compact: bool | None = None) -> QSize:  # type: ignore[override]
+        compact = self.compact if compact is None else compact
+        label_w = 0 if compact else QFontMetrics(self._label_font()).horizontalAdvance(self.label)
         key_w = QFontMetrics(self._key_font()).horizontalAdvance(self.key) + 2 * KEY_PAD_X
-        width = PAD_X + ICON + GAP + label_w + (GAP + key_w if self.key else 0) + PAD_X
+        width = PAD_X + ICON + (0 if compact else GAP + label_w)
+        width += (GAP + key_w if self.key else 0) + PAD_X
         return QSize(width, HEIGHT)
 
     def paintEvent(self, event: QPaintEvent) -> None:
@@ -84,13 +94,14 @@ class KeyButton(QAbstractButton):
         p.drawPixmap(int(x), (self.height() - ICON) // 2, pixmap(self.icon_name, color, ICON))
         x += ICON + GAP
 
-        p.setFont(self._label_font())
-        p.setPen(QColor(t.text if enabled else t.text_faint))
-        label_w = QFontMetrics(self._label_font()).horizontalAdvance(self.label)
-        p.drawText(
-            QRectF(x, 0, label_w + 2, self.height()), Qt.AlignmentFlag.AlignVCenter, self.label
-        )
-        x += label_w + GAP
+        if not self.compact:
+            p.setFont(self._label_font())
+            p.setPen(QColor(t.text if enabled else t.text_faint))
+            label_w = QFontMetrics(self._label_font()).horizontalAdvance(self.label)
+            p.drawText(
+                QRectF(x, 0, label_w + 2, self.height()), Qt.AlignmentFlag.AlignVCenter, self.label
+            )
+            x += label_w + GAP
 
         if self.key:
             p.setFont(self._key_font())

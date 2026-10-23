@@ -29,6 +29,7 @@ from degreaser.core.triage.session import TriageSession
 from degreaser.ui.format import human_bytes, human_count
 from degreaser.ui.theme import icon, theme
 from degreaser.ui.widgets.icons import STATE_LABELS, state_icon
+from degreaser.ui.widgets.screen import fit_to_screen
 
 ROW_LIMIT = 100_000
 
@@ -217,7 +218,7 @@ class ReviewWindow(QMainWindow):
         super().__init__()
         self.session = session
         self.setWindowTitle(f"Review — {project_name}")
-        self.resize(1120, 720)
+        fit_to_screen(self, 1120, 720)
         t = theme().tokens
 
         central = QWidget()

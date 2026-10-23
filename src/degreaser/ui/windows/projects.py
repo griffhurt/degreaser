@@ -30,6 +30,7 @@ from degreaser.core.project import (
 from degreaser.ui.dialogs.project_edit import ProjectEditDialog, ProjectForm
 from degreaser.ui.format import human_bytes, relative_time
 from degreaser.ui.theme import icon, pixmap, theme
+from degreaser.ui.widgets.screen import fit_to_screen
 
 
 def _restyle(widget: QWidget) -> None:
@@ -132,7 +133,7 @@ class ProjectsWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Degreaser")
-        self.resize(920, 620)
+        fit_to_screen(self, 920, 620)
         self._infos: list[ProjectInfo] = []
         self.cards: list[ProjectCard] = []
         t = theme().tokens

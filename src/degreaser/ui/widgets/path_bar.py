@@ -1,16 +1,17 @@
 """Breadcrumb path bar; clicking a folder opens its dropdown (docs/product-spec.md §4.1)."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QToolButton, QWidget
+from PySide6.QtCore import QPoint, QSize, Qt, Signal
+from PySide6.QtGui import QIcon, QResizeEvent
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QLayout, QMenu, QToolButton, QWidget
 
 from degreaser.core.model import Effective, Origin
 from degreaser.core.sources.base import basename, join
 from degreaser.ui.format import human_bytes
 from degreaser.ui.theme import icon, pixmap, theme
+from degreaser.ui.widgets.elided_label import ElidedLabel
 from degreaser.ui.widgets.icons import STATE_LABELS, state_icon
 
 _EXT_ICONS = {
@@ -103,6 +104,13 @@ class PathBar(QWidget):
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
+        # Deep paths mustn't widen the window: middle folders collapse into "…" instead
+        # (see _fit), so the layout may not impose its children's full width as a minimum.
+        self._layout.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
+        self._crumbs: list[tuple[QLabel | None, _Segment]] = []  # (separator before, segment)
+        self._ellipsis: tuple[QLabel, _Segment] | None = None
+        self._file_parts: list[QWidget] = []
+        self._hidden: list[_Segment] = []
         self._provider: ChildrenProvider | None = None
         self._path = ""
         self._root_label = "Project"
@@ -125,34 +133,117 @@ class PathBar(QWidget):
                 widget.setParent(None)
                 widget.deleteLater()
         self.segments = []
+        self._crumbs = []
+        self._file_parts = []
 
         parts = file_path.split("/") if file_path else []
         folders = [""] + ["/".join(parts[: i + 1]) for i in range(len(parts) - 1)]
         for i, folder in enumerate(folders):
-            if i:
-                self._layout.addWidget(self._separator())
-            self._add_folder_segment(folder, root_label if folder == "" else basename(folder))
+            separator = self._separator() if i else None
+            if separator is not None:
+                self._layout.addWidget(separator)
+            text = root_label if folder == "" else basename(folder)
+            segment = self._add_folder_segment(folder, text)
+            self._crumbs.append((separator, segment))
+            if i == 0:
+                # "…" stands in for collapsed folders, right after the root.
+                more = _Segment()
+                more.setText("…")
+                more.setProperty("variant", "crumb")
+                more.setCursor(Qt.CursorShape.PointingHandCursor)
+                more.setToolTip("More folders")
+                more.clicked.connect(lambda _=False, m=more: self._open_hidden_menu(m))
+                more_sep = self._separator()
+                self._layout.addWidget(more_sep)
+                self._layout.addWidget(more)
+                self._ellipsis = (more_sep, more)
         if parts:
             t = theme().tokens
-            self._layout.addWidget(self._separator())
+            sep = self._separator()
+            self._layout.addWidget(sep)
             file_icon = QLabel()
             file_icon.setPixmap(pixmap(file_icon_name(parts[-1]), t.accent, 16))
-            self._layout.addSpacing(6)
+            file_icon.setContentsMargins(6, 0, 0, 0)
             self._layout.addWidget(file_icon)
-            name = QLabel(parts[-1])
+            name = ElidedLabel(parts[-1], mode=Qt.TextElideMode.ElideMiddle)
             name.setStyleSheet(
                 f"font-weight: 600; font-size: 14px; color: {t.text}; padding-left: 6px;"
             )
-            name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            self._layout.addWidget(name)
-        self._layout.addStretch()
+            self._layout.addWidget(name, 1)
+            self._file_parts = [sep, file_icon, name]
+        else:
+            self._layout.addStretch()
+        self._fit()
 
     def _separator(self) -> QLabel:
         label = QLabel()
         label.setPixmap(pixmap("chevron-right", theme().tokens.text_faint, 14))
         return label
 
-    def _add_folder_segment(self, folder: str, text: str) -> None:
+    # Fitting ----------------------------------------------------------------------------------
+
+    def minimumSizeHint(self) -> QSize:
+        """Root, "…", the file's folder and a little of its name."""
+        if not self._crumbs:
+            return super().minimumSizeHint()
+        widths = [self._crumbs[0][1].sizeHint().width(), 40, 120]
+        return QSize(sum(widths) + 3 * 20, super().minimumSizeHint().height())
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._fit()
+
+    def _fit(self) -> None:
+        """Hide middle folders (nearest the root first) until the bar fits its width."""
+        if not self._crumbs or self._ellipsis is None:
+            return
+        available = self.width()
+        # The file name matters most: room for all of it, up to half the bar (at least 120 px).
+        file_min = 0
+        if self._file_parts:
+            name_w = self._file_parts[2].sizeHint().width()
+            file_min = min(name_w, max(120, available // 2))
+
+        def width(widgets: Sequence[QWidget | None]) -> int:
+            return sum(w.sizeHint().width() for w in widgets if w is not None)
+
+        folders = [w for pair in self._crumbs for w in pair]
+        file_w = width(self._file_parts[:2]) + file_min
+        hidden: list[int] = []
+        middle = list(range(1, len(self._crumbs) - 1))
+        needed = width(folders) + file_w
+        ellipsis_w = width(list(self._ellipsis))
+        while middle and needed > available:
+            index = middle.pop(0)
+            if not hidden:
+                needed += ellipsis_w
+            hidden.append(index)
+            needed -= width(list(self._crumbs[index]))
+        for i, (separator, segment) in enumerate(self._crumbs):
+            visible = i not in hidden
+            segment.setVisible(visible)
+            if separator is not None:
+                separator.setVisible(visible)
+        for widget in self._ellipsis:
+            widget.setVisible(bool(hidden))
+        self._hidden = [self._crumbs[i][1] for i in hidden]
+
+    def _open_hidden_menu(self, anchor: QToolButton) -> None:
+        """The "…" crumb: pick a collapsed folder, then get its usual dropdown."""
+        menu = QMenu(self)
+        for segment in self._hidden:
+            folder: str = segment.property("folder")
+            action = menu.addAction(segment.text())
+            action.triggered.connect(lambda _=False, f=folder: self._popup_folder(f, anchor))
+        menu.popup(anchor.mapToGlobal(QPoint(0, anchor.height())))
+        self._menu = menu
+
+    def _popup_folder(self, folder: str, anchor: QToolButton) -> None:
+        menu = self.build_menu(folder)
+        self._menu = menu
+        menu.popup(anchor.mapToGlobal(QPoint(0, anchor.height())))
+
+    def _add_folder_segment(self, folder: str, text: str) -> _Segment:
         segment = _Segment()
         segment.setText(text)
         segment.setProperty("variant", "crumb")
@@ -166,6 +257,7 @@ class PathBar(QWidget):
         segment.clicked.connect(lambda _=False, s=segment: self.open_menu(s))
         self.segments.append(segment)
         self._layout.addWidget(segment)
+        return segment
 
     def open_menu(self, segment: _Segment) -> QMenu:
         if self._menu is not None:
