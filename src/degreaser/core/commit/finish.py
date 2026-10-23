@@ -4,11 +4,12 @@ import csv
 import io
 import json
 import sqlite3
+from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 
 from degreaser.core.commit.journal import DELETE_OPS, get_commit, ops, set_status
 from degreaser.core.db.connection import tx
-from degreaser.core.sources.base import subtree_range
+from degreaser.core.sources.base import ancestors, subtree_range
 
 
 @dataclass(slots=True)
@@ -70,6 +71,29 @@ def build_report(conn: sqlite3.Connection, commit_id: int, status: str) -> Commi
     return report
 
 
+def _rollup_deltas(conn: sqlite3.Connection, removed: list[str]) -> dict[str, list[int]]:
+    """How much each surviving ancestor's subtree_files/subtree_bytes shrinks when `removed`
+    (deleted files and folders, none inside another) leave the tree."""
+    deltas: defaultdict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for path in removed:
+        node = conn.execute(
+            "SELECT is_dir, size, subtree_files, subtree_bytes FROM nodes WHERE path = ?", (path,)
+        ).fetchone()
+        if node is None:
+            continue
+        if not node["is_dir"]:
+            files, size = 1, node["size"] or 0
+        elif node["subtree_files"] is not None:
+            files, size = node["subtree_files"], node["subtree_bytes"] or 0
+        else:
+            files, size = _subtree_files(conn, path)
+        if files or size:
+            for ancestor in ancestors(path):
+                deltas[ancestor][0] += files
+                deltas[ancestor][1] += size
+    return deltas
+
+
 def _forget(conn: sqlite3.Connection, path: str) -> None:
     lo, hi = subtree_range(path)
     conn.execute("DELETE FROM nodes WHERE path = ?", (path,))  # cascades to descendants
@@ -89,9 +113,20 @@ def finish_commit(conn: sqlite3.Connection, commit_id: int, status: str) -> Comm
         raise ValueError(status)
     report = build_report(conn, commit_id, status)
     with tx(conn):
-        for op in ops(conn, commit_id, "done"):
+        done = [op for op in ops(conn, commit_id, "done") if op.path is not None]
+        # Emptied folders count nothing: the files that emptied them were deleted by their
+        # own ops, which already shrink every ancestor.
+        deleted = [op.path for op in done if op.op in DELETE_OPS and op.path is not None]
+        deltas = _rollup_deltas(conn, deleted)
+        for op in done:
             if op.path is not None and op.op in (*DELETE_OPS, "rmdir_if_empty"):
                 _forget(conn, op.path)
+        conn.executemany(
+            "UPDATE nodes SET subtree_files = max(0, subtree_files - ?),"
+            " subtree_bytes = max(0, subtree_bytes - ?)"
+            " WHERE path = ? AND subtree_files IS NOT NULL",
+            [(files, size, path) for path, (files, size) in deltas.items()],
+        )
         conn.execute("DELETE FROM history_changes")
         conn.execute("DELETE FROM history")
         info = get_commit(conn, commit_id)

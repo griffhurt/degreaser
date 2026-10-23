@@ -255,3 +255,27 @@ def test_cross_device_failure_explains(setup) -> None:  # type: ignore[no-untype
     assert outcome.report is not None
     [(path, detail)] = outcome.report.failures
     assert path == "junk" and "Delete permanently" in detail
+
+
+def test_rollups_shrink_after_commit(setup) -> None:  # type: ignore[no-untyped-def]
+    project, _root, src = setup
+    conn = project.conn
+    from degreaser.core.scan import compute_rollups
+
+    compute_rollups(conn)
+    p = plan(project, ["a/b/x.txt", "junk"])
+    assert runner(project, src, p.commit_id).run().status == "completed"
+
+    def rollups() -> dict[str, tuple[int, int]]:
+        return {
+            r["path"]: (r["subtree_files"], r["subtree_bytes"])
+            for r in conn.execute(
+                "SELECT path, subtree_files, subtree_bytes FROM nodes WHERE is_dir"
+            )
+        }
+
+    after = rollups()
+    compute_rollups(conn)  # a fresh bottom-up count must agree with the incremental update
+    assert after == rollups()
+    assert after[""] == (5, 1 + 3 + 1 + 1 + 1)  # only.txt, y.txt, k.txt, gone.txt, root.txt
+    assert after["a/b"] == (1, 3)
