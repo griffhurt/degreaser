@@ -117,7 +117,7 @@ class CommitRunDialog(QDialog):
         self.current.setTextFormat(Qt.TextFormat.PlainText)
         self.counts = QLabel()
         self.retry_label = QLabel()
-        self.retry_label.setStyleSheet("color: #e8710a;")
+        self.retry_label.setProperty("role", "warning")
         self.retry_label.hide()
         self.report = QPlainTextEdit()
         self.report.setReadOnly(True)
@@ -179,7 +179,8 @@ class CommitRunDialog(QDialog):
     def _progress(self, update: CommitProgress | RetryState) -> None:
         if isinstance(update, RetryState):
             self._retry_deadline = time.monotonic() + update.delay
-            self.retry_label.setText(f"Connection problem: {update.error}")
+            self.retry_label.setToolTip(update.error)
+            self._tick_retry()
             for w in (self.retry_label, self.retry_now, self.stop_retrying):
                 w.show()
             self._countdown.start()
@@ -198,8 +199,8 @@ class CommitRunDialog(QDialog):
             self.current.setText(f"{verb}: {update.current.path or ''}")
 
     def _tick_retry(self) -> None:
-        remaining = max(0, int(self._retry_deadline - time.monotonic()))
-        self.retry_now.setText(f"Retry Now ({remaining}s)")
+        remaining = max(0, round(self._retry_deadline - time.monotonic()))
+        self.retry_label.setText(f"Connection lost — retrying in {remaining} s")
 
     def _pause(self) -> None:
         self.pause_button.setEnabled(False)
