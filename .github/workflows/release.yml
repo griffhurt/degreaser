@@ -143,7 +143,7 @@ jobs:
         run: |
           Invoke-WebRequest $env:INNOSETUP_URL -OutFile innosetup.exe
           if ((Get-FileHash innosetup.exe -Algorithm SHA256).Hash -ne $env:INNOSETUP_SHA256) { throw "Inno Setup checksum mismatch" }
-          Start-Process innosetup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-',"/DIR=$env:RUNNER_TEMP\inno" -Wait
+          Start-Process "$PWD\innosetup.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-',"/DIR=$env:RUNNER_TEMP\inno" -Wait
           & "$env:RUNNER_TEMP\inno\ISCC.exe" "/DAppVersion=$env:VERSION" packaging\windows\degreaser.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v7
