@@ -36,8 +36,8 @@ def share(tmp_path: Path) -> Path:
     root = tmp_path / "share"
     root.mkdir()
     (root / "a_photo.png").write_bytes(png_bytes((640, 480)) + b"\0" * 2_000_000)
-    (root / "b.txt").write_text("bravo\n")
-    (root / "c.txt").write_text("charlie\n")
+    (root / "b.txt").write_bytes(b"bravo\n")
+    (root / "c.txt").write_bytes(b"charlie\n")
     return root
 
 
