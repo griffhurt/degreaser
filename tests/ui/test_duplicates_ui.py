@@ -90,3 +90,21 @@ def test_review_keep_one_delete_the_others(
     }
     review.close()
     window.close()
+
+
+def test_review_rows_show_the_full_path_as_a_tooltip(qtbot: QtBot, root: Path) -> None:
+    from PySide6.QtCore import Qt as QtCore
+
+    window = open_window(qtbot, root)
+    qtbot.keyClick(window, Qt.Key.Key_K)
+    window.open_review()
+    review = window.review_window
+    assert review is not None
+    qtbot.addWidget(review)
+    model = review.model
+    for column in range(model.columnCount()):
+        tip = model.data(model.index(0, column), QtCore.ItemDataRole.ToolTipRole)
+        assert tip.startswith("a original/notes.txt")
+    assert review.table.textElideMode() == QtCore.TextElideMode.ElideMiddle
+    review.close()
+    window.close()

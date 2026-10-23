@@ -172,9 +172,12 @@ class ReviewModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DecorationRole and column == 2:
             state = self.state(path)
             return state_icon(state.action, state.origin, bool(state.category))
-        if role == Qt.ItemDataRole.ToolTipRole and column == 2:
-            state = self.state(path)
-            return f"Decided by: {state.decided_by}" if state.decided_by else None
+        if role == Qt.ItemDataRole.ToolTipRole:
+            # The full path on every cell: the Path column is often too narrow to show it.
+            full = f"{path}/" if is_dir else path
+            if column == 2 and (decided_by := self.state(path).decided_by):
+                return f"{full}\nDecided by: {decided_by}"
+            return full
         return None
 
 
@@ -281,6 +284,9 @@ class ReviewWindow(QMainWindow):
         self.table.setModel(self.model)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setShowGrid(False)
+        # Long paths lose their middle, so both the top folders and the file name stay visible.
+        self.table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.table.setWordWrap(False)  # with wrapping on, Qt breaks paths at "/" instead
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().hide()
         self.table.verticalHeader().setDefaultSectionSize(32)
