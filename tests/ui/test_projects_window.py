@@ -208,3 +208,16 @@ def test_existing_smb_project_keeps_password_unless_changed(qtbot: QtBot) -> Non
     assert dialog.result() == ProjectEditDialog.DialogCode.Accepted
     assert dialog.result_form().password is None
     assert dialog.result_form().source["host"] == "nas"
+
+
+def test_dialog_scrolls_and_keeps_buttons_visible(qtbot: QtBot) -> None:
+    dialog = ProjectEditDialog()
+    qtbot.addWidget(dialog)
+    dialog.resize(760, 500)
+    dialog.show()
+    qtbot.waitExposed(dialog)
+    content = dialog.scroll_area.widget()
+    assert content.isAncestorOf(dialog.name_edit) and content.isAncestorOf(dialog.delete_column)
+    assert not content.isAncestorOf(dialog.save_button)  # always reachable
+    assert dialog.scroll_area.verticalScrollBar().maximum() > 0
+    assert dialog.minimumSizeHint().height() < 500

@@ -22,6 +22,8 @@ def stylesheet(
 }}
 QMainWindow, QDialog {{ background: {t.bg}; }}
 QWidget#central {{ background: {t.bg}; }}
+/* Scrolling dialog bodies show the dialog's own background. */
+QScrollArea#dialogScroll, QWidget#dialogContent {{ background: transparent; }}
 
 /* Labels ---------------------------------------------------------------------------- */
 QLabel[role="title"] {{ font-size: {t.font_size_title}px; font-weight: 600; }}

@@ -39,9 +39,17 @@ class ListOutcome:
 
 @dataclass(frozen=True, slots=True)
 class IndexProgress:
-    dirs_listed: int
+    dirs_listed: int  # by this run
     dirs_pending: int
     entries_found: int
+    # Across every run so far, for a percentage. `dirs_known` grows as listings reveal
+    # subfolders, so the percentage can dip early on; it settles as the tree fills in.
+    dirs_done: int = 0
+    dirs_known: int = 0
+
+    @property
+    def fraction(self) -> float:
+        return self.dirs_done / self.dirs_known if self.dirs_known else 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,6 +210,9 @@ class Indexer:
             )
         )
         queued = {path for _, path in pending}
+        listed_before = conn.execute(
+            "SELECT count(*) FROM nodes WHERE is_dir = 1 AND listed = 1"
+        ).fetchone()[0]
         in_flight: dict[Future, tuple[int, str]] = {}
         waiters: defaultdict[str, list[Future[ListOutcome]]] = defaultdict(list)
         buffer: list[tuple[int, str, list[Entry] | None, str | None]] = []
@@ -239,7 +250,11 @@ class Indexer:
             buffer.clear()
             buffered_rows = 0
             if self._on_progress:
-                self._on_progress(IndexProgress(dirs_listed, len(pending), entries_found))
+                done = listed_before + dirs_listed
+                remaining = len(pending) + len(in_flight)
+                self._on_progress(
+                    IndexProgress(dirs_listed, len(pending), entries_found, done, done + remaining)
+                )
 
         def take_priority(pool: ThreadPoolExecutor) -> None:
             with self._lock:

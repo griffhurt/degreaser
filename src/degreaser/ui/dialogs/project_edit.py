@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -36,6 +39,7 @@ from degreaser.core.sources.smb import (
 )
 from degreaser.core.sync import RemoteState, probe_existing
 from degreaser.ui.controllers.tasks import Task, submit
+from degreaser.ui.widgets.screen import fit_to_screen
 
 MB = 1024 * 1024
 
@@ -157,12 +161,25 @@ class ProjectEditDialog(QDialog):
         title = "Add Existing Project" if adding_existing else "New Project"
         self.setWindowTitle("Edit Project" if existing else title)
         self.setMinimumWidth(720)
+        # Everything but the error line and the buttons scrolls: on a short screen the
+        # settings and rules don't fit (the buttons must stay reachable).
+        outer = QVBoxLayout(self)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setObjectName("dialogScroll")
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        content = QWidget()
+        content.setObjectName("dialogContent")
+        self.scroll_area.setWidget(content)
+        outer.addWidget(self.scroll_area, 1)
         form = existing or ProjectForm(
             name="",
             source={"type": "local", "path": ""},
             settings=ProjectSettings(),
         )
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 6, 0)  # room for the scroll bar
 
         if adding_existing:
             intro = QLabel(
@@ -418,7 +435,7 @@ class ProjectEditDialog(QDialog):
 
         self.error_label = QLabel()
         self.error_label.setProperty("role", "error")
-        layout.addWidget(self.error_label)
+        outer.addWidget(self.error_label)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -431,7 +448,10 @@ class ProjectEditDialog(QDialog):
         self.save_button = save
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        outer.addWidget(buttons)
+        # Open as tall as the content wants, but no taller than the screen.
+        chrome = buttons.sizeHint().height() + self.error_label.sizeHint().height() + 48
+        fit_to_screen(self, 760, content.sizeHint().height() + chrome)
 
     # Rules ------------------------------------------------------------------------------------
 
