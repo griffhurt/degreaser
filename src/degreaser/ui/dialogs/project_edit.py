@@ -206,13 +206,10 @@ class ProjectEditDialog(QDialog):
         type_row = QHBoxLayout()
         self.local_radio = QRadioButton("Local folder")
         self.smb_radio = QRadioButton("SMB share")
-        webdav_radio = QRadioButton("WebDAV")
-        webdav_radio.setEnabled(False)
-        webdav_radio.setToolTip("Coming later")
         is_smb = form.source.get("type") == "smb"
         (self.smb_radio if is_smb else self.local_radio).setChecked(True)
         group = QButtonGroup(self)
-        for radio in (self.local_radio, self.smb_radio, webdav_radio):
+        for radio in (self.local_radio, self.smb_radio):
             group.addButton(radio)
             type_row.addWidget(radio)
         type_row.addStretch()

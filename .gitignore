@@ -29,3 +29,9 @@ spikes/**/out/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Development docs (specs, design notes, decision log, release runbook) stay local; only the
+# user guide and the logo are published.
+docs/*
+!docs/user-guide.md
+!docs/assets/

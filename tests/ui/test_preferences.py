@@ -168,7 +168,13 @@ def test_triage_window_has_a_help_menu(qtbot: QtBot, tmp_path: Path) -> None:
     help_menu = menus["Help"]
     assert isinstance(help_menu, QMenu)
     labels = [a.text() for a in help_menu.actions()]
-    assert labels == ["Degreaser User Guide", "Release Notes", "Report a Problem…"]
+    assert labels == [
+        "Degreaser User Guide",
+        "Release Notes",
+        "Report a Problem…",
+        "",
+        "About Degreaser",
+    ]
 
 
 def test_run_modal_deletes_the_dialog(qtbot: QtBot) -> None:

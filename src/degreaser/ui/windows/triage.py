@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from degreaser import __version__
 from degreaser.core.categories import CategoryStore, Completer, format_category
 from degreaser.core.commit import TrashBatch, empty_trash, list_trash_batches
 from degreaser.core.duplicates import DuplicateFinder, FindProgress, FindSummary, Pause
@@ -43,7 +44,7 @@ from degreaser.core.triage.session import (
     Mode,
     TriageSession,
 )
-from degreaser.links import ISSUES_URL, RELEASES_URL, USER_GUIDE_URL
+from degreaser.links import ISSUES_URL, RELEASES_URL, REPO_URL, USER_GUIDE_URL
 from degreaser.ui.controllers.sync_controller import SyncController
 from degreaser.ui.controllers.tasks import Task, submit
 from degreaser.ui.dialogs.commit import start_commit
@@ -366,8 +367,22 @@ class TriageWindow(QMainWindow):
             ("Report a Problem…", ISSUES_URL),
         ):
             help_menu.addAction(label, lambda u=url: QDesktopServices.openUrl(QUrl(u)))
+        help_menu.addSeparator()
+        # macOS moves this to the application menu (Degreaser → About Degreaser).
+        about = QAction("About Degreaser", self)
+        about.setMenuRole(QAction.MenuRole.AboutRole)
+        about.triggered.connect(self.show_about)
+        help_menu.addAction(about)
         edit_menu.aboutToShow.connect(self._update_undo_labels)
         self._update_undo_labels()
+
+    def show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "About Degreaser",
+            f"<b>Degreaser {__version__}</b><p>Clean up a huge pile of old files, one file at "
+            f'a time.</p><p><a href="{REPO_URL}">{REPO_URL}</a><br>MIT licence</p>',
+        )
 
     def _build_shortcuts(self) -> None:
         self.shortcuts: dict[str, QShortcut] = {}
