@@ -43,6 +43,7 @@ from degreaser.core.triage.session import (
     Mode,
     TriageSession,
 )
+from degreaser.links import ISSUES_URL, RELEASES_URL, USER_GUIDE_URL
 from degreaser.ui.controllers.sync_controller import SyncController
 from degreaser.ui.controllers.tasks import Task, submit
 from degreaser.ui.dialogs.commit import start_commit
@@ -356,6 +357,14 @@ class TriageWindow(QMainWindow):
         preferences.setShortcut(preferences_shortcut())
         preferences.triggered.connect(self.preferences_requested)
         edit_menu.addAction(preferences)
+
+        help_menu = self.menuBar().addMenu("&Help")
+        for label, url in (
+            ("Degreaser User Guide", USER_GUIDE_URL),
+            ("Release Notes", RELEASES_URL),
+            ("Report a Problem…", ISSUES_URL),
+        ):
+            help_menu.addAction(label, lambda u=url: QDesktopServices.openUrl(QUrl(u)))
         edit_menu.aboutToShow.connect(self._update_undo_labels)
         self._update_undo_labels()
 

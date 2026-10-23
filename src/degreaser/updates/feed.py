@@ -14,9 +14,10 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 from degreaser import __version__
+from degreaser.links import RELEASES_URL as RELEASES_URL
+from degreaser.links import REPO
 
-REPO = "griffhurt/degreaser"
-RELEASES_PAGE = f"https://github.com/{REPO}/releases"
+__all__ = ["RELEASES_URL", "REPO", "Release", "feed_url", "fetch_latest", "is_newer"]
 _SPARKLE = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
 
 
@@ -25,7 +26,7 @@ def platform_name() -> str:
 
 
 def feed_url(name: str | None = None) -> str:
-    return f"{RELEASES_PAGE}/latest/download/appcast-{name or platform_name()}.xml"
+    return f"{RELEASES_URL}/latest/download/appcast-{name or platform_name()}.xml"
 
 
 def user_agent() -> str:
@@ -82,7 +83,7 @@ def parse_appcast(xml: bytes | str) -> list[Release]:
                 title=(item.findtext("title") or f"Degreaser {version}").strip(),
                 notes_html=(item.findtext("description") or "").strip(),
                 download_url=enclosure.get("url", "") if enclosure is not None else "",
-                page_url=(item.findtext("link") or RELEASES_PAGE).strip(),
+                page_url=(item.findtext("link") or RELEASES_URL).strip(),
             )
         )
     releases.sort(key=lambda r: version_key(r.version), reverse=True)

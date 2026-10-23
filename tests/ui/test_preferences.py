@@ -2,6 +2,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
+from PySide6.QtWidgets import QMenu
 from pytestqt.qtbot import QtBot
 
 from degreaser.core import settings as settings_mod
@@ -156,3 +157,15 @@ def test_open_window_picks_up_new_keymap(qtbot: QtBot, tmp_path: Path) -> None:
         lambda: window.session.current is not None and window.session.current.path == "b.txt",
         timeout=5000,
     )
+
+
+def test_triage_window_has_a_help_menu(qtbot: QtBot, tmp_path: Path) -> None:
+    (tmp_path / "a.txt").write_text("a")
+    project = Project.create("P", {"type": "local", "path": str(tmp_path)})
+    window = TriageWindow(project, Settings())
+    qtbot.addWidget(window)
+    menus = {a.text().replace("&", ""): a.menu() for a in window.menuBar().actions()}
+    help_menu = menus["Help"]
+    assert isinstance(help_menu, QMenu)
+    labels = [a.text() for a in help_menu.actions()]
+    assert labels == ["Degreaser User Guide", "Release Notes", "Report a Problem…"]

@@ -222,3 +222,12 @@ def test_dialog_scrolls_and_keeps_buttons_visible(qtbot: QtBot) -> None:
     assert not content.isAncestorOf(dialog.save_button)  # always reachable
     assert dialog.scroll_area.verticalScrollBar().maximum() > 0
     assert dialog.minimumSizeHint().height() < 500
+
+
+def test_empty_state_links_to_the_user_guide(qtbot: QtBot) -> None:
+    from degreaser.links import USER_GUIDE_URL
+
+    window = ProjectsWindow()
+    qtbot.addWidget(window)
+    assert USER_GUIDE_URL in window.guide_link.text()
+    assert window.guide_link.openExternalLinks()

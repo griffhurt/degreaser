@@ -29,6 +29,7 @@ from degreaser.core.project import (
     remove_project,
 )
 from degreaser.core.settings import Settings
+from degreaser.links import USER_GUIDE_URL
 from degreaser.ui.dialogs.project_edit import ProjectEditDialog, ProjectForm
 from degreaser.ui.format import human_bytes, relative_time
 from degreaser.ui.theme import icon, pixmap, theme
@@ -227,7 +228,12 @@ class ProjectsWindow(QMainWindow):
         empty_text = QLabel("Create a project for a folder you want to clean up.")
         empty_text.setProperty("role", "muted")
         empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        for w in (empty_icon, empty_title, empty_text):
+        self.guide_link = QLabel(f'New here? <a href="{USER_GUIDE_URL}">Read the user guide</a>')
+        self.guide_link.setProperty("role", "muted")
+        self.guide_link.setOpenExternalLinks(True)
+        self.guide_link.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.guide_link.setContentsMargins(0, 6, 0, 0)
+        for w in (empty_icon, empty_title, empty_text, self.guide_link):
             empty.addWidget(w)
         empty.addStretch()
         layout.addWidget(self.empty_label, 1)

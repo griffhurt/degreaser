@@ -24,8 +24,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from degreaser.links import REPO  # noqa: E402
 from degreaser.updates import public_key  # noqa: E402
-from degreaser.updates.feed import REPO  # noqa: E402
 
 CHANGELOG = ROOT / "CHANGELOG.md"
 MIN_MACOS = "14.0"
