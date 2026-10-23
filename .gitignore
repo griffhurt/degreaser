@@ -24,8 +24,6 @@ Thumbs.db
 .claude/settings.local.json
 
 # Spike outputs (generated media, benchmark DBs)
-spikes/**/media/
-spikes/**/out/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
@@ -35,3 +33,6 @@ spikes/**/out/
 docs/*
 !docs/user-guide.md
 !docs/assets/
+
+# M0 experiments (and their CI workflow, spikes/spikes-workflow.yml) stay local.
+spikes/

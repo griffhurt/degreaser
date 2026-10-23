@@ -1,6 +1,8 @@
 # Degreaser — guidance for Claude
 
-Read [README.md](README.md) and the docs in `docs/` before changing behaviour. `docs/product-spec.md` is the source of truth for behaviour, and `docs/decisions.md` records why things are the way they are. When behaviour changes, update the relevant doc in the same change. When a decision changes, add a new entry to `docs/decisions.md` instead of rewriting the old one.
+Read [README.md](README.md) and [docs/user-guide.md](docs/user-guide.md) (what users see) before changing behaviour. When user-visible behaviour changes, update the user guide in the same change.
+
+The maintainer also keeps design docs in `docs/` that aren't published (they're gitignored): a product spec, architecture notes, a decision log, the roadmap and the release runbook. If they're present in your checkout, `docs/product-spec.md` is the source of truth for behaviour and `docs/decisions.md` records why things are the way they are. Update the relevant one in the same change, and when a decision changes, add a new entry to `docs/decisions.md` instead of rewriting the old one. Code comments that cite them ("docs/previews.md §2") point at these local docs.
 
 ## Invariants
 
@@ -14,7 +16,7 @@ Read [README.md](README.md) and the docs in `docs/` before changing behaviour. `
 
 ## UI styling
 
-- Never hard-code colours, fonts or radii in widgets. Use `theme().tokens` and the stylesheet's `variant`/`role` properties (docs/architecture.md §7).
+- Never hard-code colours, fonts or radii in widgets. Use `theme().tokens` and the stylesheet's `variant`/`role` properties (the selectors are in `ui/theme/qss.py`).
 - Icons come from `ui/assets/icons` (Lucide). To add one, fetch it from `lucide-static` at the same version and keep the licence file.
 - Check visual changes by rendering windows offscreen (`QWidget.grab().save(...)`) in both `--theme light` and `--theme dark`.
 
@@ -29,7 +31,7 @@ uv run --group build pyinstaller packaging/degreaser.spec --noconfirm   # packag
 QT_QPA_PLATFORM=offscreen uv run degreaser --smoke-test                 # self-check (JSON)
 uv run degreaser --smb-probe smb://host/share/folder --username NAME     # read-only server check (JSON)
 uv run python packaging/make_icons.py                                    # re-render app icons from docs/assets/logo.svg
-# Releases: push a vX.Y.Z tag (docs/releasing.md); the workflow creates a draft release.
+# Releases (maintainer): push a vX.Y.Z tag; .github/workflows/release.yml creates a draft release.
 
 # Samba test server (127.0.0.1:1445, user/pass degreaser/degreaser, shares: data, bench)
 docker compose -f tests/integration/docker-compose.yml up -d --build --wait
@@ -42,7 +44,7 @@ tests/integration/samba/set-latency.sh 10   # add 10 ms RTT; 0 removes it
 - For SMB listings, read `DirEntry.smb_info` (size and times from the directory query itself). `DirEntry.stat()` makes an extra round trip per entry, and it drops the port.
 - `import smbclient` doesn't import `smbclient.shutil`; import it explicitly.
 - Ruff formats Python code blocks inside Markdown, so `*.md` is excluded to keep the docs' hand-aligned examples.
-- **Never** pass a Python `QIODevice` to `QMediaPlayer.setSourceDevice()`, and never call `setSourceDevice(None)`. Both deadlock, because Qt's FFmpeg thread needs the GIL while the UI thread waits on it. SMB media goes through the loopback HTTP server (docs/previews.md §2).
+- **Never** pass a Python `QIODevice` to `QMediaPlayer.setSourceDevice()`, and never call `setSourceDevice(None)`. Both deadlock, because Qt's FFmpeg thread needs the GIL while the UI thread waits on it. SMB media goes through the loopback HTTP server (`core/preview/media_server.py`).
 - Open SMB files with `share_access="rwd"`. For hot SMB paths (directory listings), parse response buffers with `struct`; smbprotocol's generic parsing is slow.
 - To identify threads in callbacks from Qt-owned threads, use `threading.get_native_id()`.
 - PyInstaller can't see modules that are only imported dynamically. `--smoke-test` will fail if one of them is missing from the bundle, so add it to `hiddenimports` in `packaging/degreaser.spec`.
