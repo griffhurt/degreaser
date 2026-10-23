@@ -64,6 +64,9 @@ from degreaser.ui.windows.projects import save_source_changes
 from degreaser.ui.windows.review import ReviewWindow
 
 PATH_BAR_LIMIT = 500
+# While indexing, files it finds only reach the triaged/total figures through a full walk
+# (a few seconds on a large tree, on a worker), so recount at most this often.
+INDEX_RECOUNT_SECONDS = 30
 
 
 _PAST = {
@@ -140,6 +143,7 @@ class TriageWindow(QMainWindow):
         self._indexing = False
         self._walk_running = False
         self._pending_tag_folder: str | None = None
+        self._last_walk = 0.0
         self._dup_running = False
         self._dup_restart = False
         self._dup_cancel = CancelToken()
@@ -1036,6 +1040,8 @@ class TriageWindow(QMainWindow):
         def on_progress(p: IndexProgress) -> None:
             if not self._closing:
                 self.show_index_progress(p)
+                if time.monotonic() - self._last_walk > INDEX_RECOUNT_SECONDS:
+                    self._request_walk()
 
         def done(summary: IndexSummary) -> None:
             self._indexing = False
@@ -1069,6 +1075,7 @@ class TriageWindow(QMainWindow):
         if self._walk_running:
             return
         self._walk_running = True
+        self._last_walk = time.monotonic()
         tracker = self.session.tracker
         token = tracker.begin_walk()
 

@@ -257,3 +257,27 @@ def test_undo_shortcut_works_without_opening_edit_menu(qtbot: QtBot, tree: Path)
     assert window.redo_action.isEnabled()
     window.close()
     project.close()
+
+
+def test_figures_refresh_while_indexing(
+    qtbot: QtBot, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Files the indexer finds reach the triaged/total figures without a restart: the
+    window recounts during indexing, not only when it finishes."""
+    from degreaser.ui.windows import triage as triage_module
+
+    monkeypatch.setattr(triage_module, "INDEX_RECOUNT_SECONDS", 0)
+    reasons: list[bool] = []
+    original = TriageWindow._request_walk
+
+    def counting(self: TriageWindow) -> None:
+        reasons.append(self._indexing)  # was indexing still running?
+        original(self)
+
+    monkeypatch.setattr(TriageWindow, "_request_walk", counting)
+    _project, window = open_window(qtbot, tree)
+    assert any(reasons[1:]), "no recount was requested while indexing"
+    qtbot.waitUntil(lambda: not window._walk_running, timeout=5000)
+    summary = window.session.tracker.summary
+    assert summary is not None and summary.files_known == 6  # .DS_Store counts (rule-deleted)
+    window.close()
