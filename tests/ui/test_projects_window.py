@@ -217,6 +217,7 @@ def test_dialog_scrolls_and_keeps_buttons_visible(qtbot: QtBot) -> None:
     dialog.show()
     qtbot.waitExposed(dialog)
     content = dialog.scroll_area.widget()
+    assert content is not None
     assert content.isAncestorOf(dialog.name_edit) and content.isAncestorOf(dialog.delete_column)
     assert not content.isAncestorOf(dialog.save_button)  # always reachable
     assert dialog.scroll_area.verticalScrollBar().maximum() > 0
