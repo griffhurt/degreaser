@@ -23,6 +23,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
+from urllib.parse import unquote, urlsplit
 
 from smbprotocol.connection import Connection
 from smbprotocol.exceptions import (
@@ -254,6 +255,20 @@ def normalise_share_path(path: str) -> str:
     return "/".join(p for p in path.replace("\\", "/").split("/") if p and p != ".")
 
 
+def parse_smb_location(text: str) -> tuple[str, int | None, str, str] | None:
+    """'smb://nas:1445/share/a/b' or '\\\\nas\\share\\a' → (host, port, share, path); None if it's
+    a bare host name."""
+    text = text.strip()
+    if text.startswith("\\\\"):
+        text = "smb://" + text[2:].replace("\\", "/")
+    if not text.lower().startswith("smb://"):
+        return None
+    parts = urlsplit(text)
+    segments = [unquote(p) for p in parts.path.split("/") if p]
+    share = segments[0] if segments else ""
+    return parts.hostname or "", parts.port, share, "/".join(segments[1:])
+
+
 # The source --------------------------------------------------------------------------------------
 
 
@@ -299,6 +314,19 @@ class SmbSource:
 
     def describe(self) -> str:
         return self.config.describe()
+
+    def connection_info(self) -> dict[str, Any]:
+        """Negotiated protocol details (for diagnostics)."""
+        link = self._ensure()
+        conn, session = link.connection, link.session
+        dialect = conn.dialect
+        return {
+            "dialect": f"SMB {dialect >> 8:x}.{dialect & 0xFF:x}" if dialect else "unknown",
+            "signing": bool(session.signing_required),
+            "encryption": bool(session.encrypt_data),
+            "max_read_size": conn.max_read_size,
+            "max_write_size": conn.max_write_size,
+        }
 
     def _ensure(self) -> _Link:
         with self._lock:

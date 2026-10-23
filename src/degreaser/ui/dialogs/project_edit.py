@@ -3,7 +3,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
 
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -27,7 +26,13 @@ from degreaser.core.project import ProjectSettings
 from degreaser.core.rules import validate_pattern
 from degreaser.core.rules.presets import Preset, RuleConfig, RuleKind, presets_for
 from degreaser.core.sources.local import LocalSource
-from degreaser.core.sources.smb import SmbConfig, SmbSource, connected, normalise_share_path
+from degreaser.core.sources.smb import (
+    SmbConfig,
+    SmbSource,
+    connected,
+    normalise_share_path,
+    parse_smb_location,
+)
 from degreaser.core.sync import RemoteState, probe_existing
 from degreaser.ui.controllers.tasks import Task, submit
 
@@ -64,18 +69,10 @@ def _patterns(edit: QPlainTextEdit) -> list[str]:
     return [line.replace("\\r", "\r") for line in lines if line.strip()]
 
 
-def parse_smb_location(text: str) -> tuple[str, int | None, str, str] | None:
-    """'smb://nas:1445/share/a/b' or '\\\\nas\\share\\a' → (host, port, share, path); None if it's
-    a bare host name."""
-    text = text.strip()
-    if text.startswith("\\\\"):
-        text = "smb://" + text[2:].replace("\\", "/")
-    if not text.lower().startswith("smb://"):
-        return None
-    parts = urlsplit(text)
-    segments = [unquote(p) for p in parts.path.split("/") if p]
-    share = segments[0] if segments else ""
-    return parts.hostname or "", parts.port, share, "/".join(segments[1:])
+def sentence(exc: BaseException) -> str:
+    """Core error messages are lowercase clauses; show them as a sentence."""
+    text = str(exc) or type(exc).__name__
+    return text[:1].upper() + text[1:] + ("" if text.endswith((".", ")")) else ".")
 
 
 def test_connection(config: SmbConfig, password: str) -> str:
@@ -519,7 +516,7 @@ class ProjectEditDialog(QDialog):
 
         def failed(exc: BaseException) -> None:
             self._accept_after_test = False
-            self._set_test_result(False, str(exc) or type(exc).__name__)
+            self._set_test_result(False, sentence(exc))
             self._save_anyway = True
             self.save_button.setText("Save Anyway")
 
@@ -609,7 +606,7 @@ class ProjectEditDialog(QDialog):
 
         def failed(exc: BaseException) -> None:
             self.save_button.setEnabled(True)
-            self.error_label.setText(str(exc) or type(exc).__name__)
+            self.error_label.setText(sentence(exc))
 
         self.save_button.setEnabled(False)
         self.error_label.setText("")

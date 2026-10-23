@@ -177,3 +177,20 @@ def test_config_round_trip() -> None:
     assert config.describe() == "smb://nas:1445/backups/Laptops/2014"
     assert config.login == "HOME\\griff"
     assert normalise_share_path("\\Laptops\\2014/") == "Laptops/2014"
+
+
+def test_probe_is_read_only_and_reports_quirks(
+    source: SmbSource, smb_server: SmbTestServer, smb_workdir: str
+) -> None:
+    from degreaser.core.sources.smb_probe import probe, summarise
+
+    source.write_file_atomic("Case.txt", b"1")
+    source.write_file_atomic("name\uf03f.txt", b"1")  # how a Mac writes "name?.txt"
+    before = sorted(e.name for e in source.list_dir(""))
+    result = probe(_config(smb_server, smb_workdir), smb_server.password, report=lambda _l: None)
+    assert result["listing"]["complete"] and result["listing"]["files"] == 4
+    assert result["connection"]["dialect"].startswith("SMB")
+    assert result["case_sensitive"] is False  # Samba's default
+    assert result["findings"]["names_windows_cant_hold"]
+    assert any("Windows can't use" in note for note in summarise(result))
+    assert sorted(e.name for e in source.list_dir("")) == before  # nothing written
