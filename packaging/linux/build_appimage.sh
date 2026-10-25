@@ -6,7 +6,7 @@
 set -euo pipefail
 
 APPDIR=$(mktemp -d)/Degreaser.AppDir
-OUT="dist/Degreaser-${VERSION}-x86_64.AppImage"
+NAME="Degreaser-${VERSION}-x86_64.AppImage"
 mkdir -p "$APPDIR/usr/lib"
 cp -a dist/Degreaser "$APPDIR/usr/lib/degreaser"
 cp packaging/icons/degreaser.png "$APPDIR/degreaser.png"
@@ -28,8 +28,13 @@ exec "$HERE/usr/lib/degreaser/degreaser" "$@"
 APPRUN
 chmod +x "$APPDIR/AppRun"
 
-# CI runners have no FUSE, so appimagetool runs extracted.
-APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$APPIMAGETOOL" \
-  --updateinformation "gh-releases-zsync|griffhurt|degreaser|latest|Degreaser-*-x86_64.AppImage.zsync" \
-  "$APPDIR" "$OUT"
-echo "Done: $OUT"
+# CI runners have no FUSE, so appimagetool runs extracted. It writes the .zsync into the
+# current directory, so run it from dist/ to keep both files together.
+(
+  cd dist
+  APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$APPIMAGETOOL" \
+    --updateinformation "gh-releases-zsync|griffhurt|degreaser|latest|Degreaser-*-x86_64.AppImage.zsync" \
+    "$APPDIR" "$NAME"
+)
+[[ -f "dist/$NAME.zsync" ]] || { echo "appimagetool didn't write dist/$NAME.zsync"; exit 1; }
+echo "Done: dist/$NAME and dist/$NAME.zsync"

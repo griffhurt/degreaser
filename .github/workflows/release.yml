@@ -161,9 +161,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.2
-      - run: sudo apt-get update && sudo apt-get install -y $LINUX_QT_DEPS libasound2
+      # Qt's X11 plugin needs these xcb libraries. Installed here so PyInstaller bundles them:
+      # minimal desktops don't always have them, and without them no window opens.
+      - run: |
+          sudo apt-get update && sudo apt-get install -y $LINUX_QT_DEPS libasound2 \
+            libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-render-util0 libxcb-image0 \
+            libxcb-randr0 libxcb-xinerama0 libxcb-xkb1
       - run: uv sync --locked --group build
       - run: uv run pyinstaller packaging/degreaser.spec --noconfirm
+      - name: Check the X11 libraries were bundled
+        run: |
+          # The headless smoke test can't notice a missing X11 library, so look for them.
+          for lib in libxcb-icccm.so.4 libxcb-keysyms.so.1 libxcb-shape.so.0; do
+            find dist/Degreaser -name "$lib" | grep -q . || { echo "::error::$lib isn't bundled"; exit 1; }
+          done
       - name: Download appimagetool
         run: |
           curl -fsSLo "$RUNNER_TEMP/appimagetool" "$APPIMAGETOOL_URL"
